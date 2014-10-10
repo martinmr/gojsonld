@@ -11,7 +11,11 @@ func flatten(element interface{}, context interface{}) interface{} {
 	// 2)
 	//TODO make sure element is expanded
 	//TODO check "" works instead of nil
-	generateNodeMap(element, nodeMap, "@default", nil, "", nil)
+	var idGenerator = BlankNodeIdGenerator{}
+	idGenerator.counter = 0
+	idGenerator.identifierMap = make(map[string]string, 0)
+	generateNodeMap(element, nodeMap, "@default", nil,
+		"", nil, &idGenerator)
 	// 3)
 	defaultGraph := nodeMap["@default"].(map[string]interface{})
 	delete(nodeMap, "@default")
@@ -67,12 +71,12 @@ func flatten(element interface{}, context interface{}) interface{} {
 
 func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 	activeGraph string, activeSubject interface{}, activeProperty string,
-	list map[string]interface{}) error {
+	list map[string]interface{}, idGenerator *BlankNodeIdGenerator) error {
 	// 1)
 	if _, isArray := element.([]interface{}); isArray {
 		// 1.1)
 		err := generateNodeMap(element, nodeMap, activeGraph, activeSubject,
-			activeProperty, list)
+			activeProperty, list, idGenerator)
 		if err != nil {
 			return err
 		}
@@ -104,8 +108,8 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		}
 		for _, item := range oldTypes {
 			if strings.HasPrefix(item, "_:") {
-				//TODO replace item by new blank node identifier
-				newTypes = append(newTypes, item)
+				newTypes = append(newTypes,
+					idGenerator.generateBlankNodeIdentifier(&item))
 			} else {
 				newTypes = append(newTypes, item)
 			}
@@ -120,16 +124,10 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 	if _, hasValue := elementMap["@value"]; hasValue {
 		// 4.1)
 		if list == nil {
-			//TODO merge
-			if _, hasProperty := node[activeProperty]; !hasProperty {
-				tmpArray := make([]interface{}, 0)
-				tmpArray = append(tmpArray, element)
-				node[activeProperty] = tmpArray
-			}
+			mergeValue(node, activeProperty, elementMap)
 			// 4.2)
 		} else {
-			//TODO merge
-			list["@list"] = append(list["@list"].([]interface{}), element)
+			mergeValue(list, "@list", elementMap)
 		}
 		// 5)
 	} else if _, hasList := elementMap["@list"]; hasList {
@@ -138,26 +136,24 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		result["@list"] = make([]interface{}, 0)
 		// 5.2)
 		generateNodeMap(elementMap["@list"], nodeMap, activeGraph, activeSubject,
-			activeProperty, result)
+			activeProperty, result, idGenerator)
 		// 5.3)
-		//TODO merge
-		node[activeProperty] = append(node[activeGraph].([]interface{}), result)
+		mergeValue(node, activeProperty, result)
 		// 6)
 	} else {
 		//6.1)
 		var id string
-		if _, hasId := elementMap["@id"]; hasId {
+		if elementID, hasId := elementMap["@id"]; hasId {
 			if strings.HasPrefix(id, "_:") {
-				//TODO generate blank node identifier
-				id = elementMap["@id"].(string)
+				elementIDString := elementID.(string)
+				id = idGenerator.generateBlankNodeIdentifier(&elementIDString)
 			} else {
 				id = elementMap["@id"].(string)
 			}
 			delete(elementMap, "@id")
 			// 6.2)
 		} else {
-			//TODO generate identifier
-			id = ""
+			id = idGenerator.generateBlankNodeIdentifier(nil)
 		}
 		// 6.3)
 		if _, hasId := graph[id]; !hasId {
@@ -170,14 +166,8 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		node := graph[id].(map[string]interface{})
 		// 6.5)
 		if _, isMap := activeSubject.(map[string]interface{}); isMap {
-			// 6.5.1)
-			if _, hasProperty := node[activeProperty]; !hasProperty {
-				tmpArray := make([]interface{}, 0)
-				tmpArray = append(tmpArray, activeSubject)
-				node[activeProperty] = tmpArray
-			} else {
-				//TODO merge
-			}
+			mergeValue(graph["@id"].(map[string]interface{}), activeProperty,
+				activeSubject)
 			// 6.6)
 		} else if activeProperty != "" {
 			// 6.6.1)
@@ -185,19 +175,12 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 			reference["@id"] = id
 			// 6.6.2)
 			if list == nil {
-				// 6.6.2.1)
-				if _, hasProperty := node[activeProperty]; !hasProperty {
-					tmpArray := make([]interface{}, 0)
-					tmpArray = append(tmpArray, reference)
-					node[activeProperty] = tmpArray
-					// 6.6.2.2)
-				} else {
-					//TODO merge
-				}
+				mergeValue(node, activeProperty, reference)
 				// 6.6.3)
 			} else {
 				//TODO merge
-				//TODO code differs from spec
+				//TODO code differs from spec. For now following Java code
+				mergeValue(list, "@list", reference)
 			}
 		}
 		//TODO code differs from spec. see below
@@ -207,15 +190,19 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		//6.7)
 		if _, hasType := elementMap["@type"]; hasType {
 			for _, typeVal := range elementMap["@type"].([]interface{}) {
-				//TODO merge
+				mergeValue(node, "@type", typeVal)
 			}
+			delete(elementMap, "@type")
 		}
 		// 6.8)
 		if indexVal, hasIndex := elementMap["@index"]; hasIndex {
-			//TODO deep compare for now just set the key-value pair
-			// without checking
-			node["@index"] = indexVal
-			//remove if deep compare returns false
+			if nodeIndexVal, hasNodeIndex := node["@index"]; hasNodeIndex {
+				if !deepCompare(nodeIndexVal, indexVal) {
+					return CONFLICTING_INDEXES
+				} else {
+					node["@index"] = indexVal
+				}
+			}
 			delete(elementMap, "@index")
 		}
 		// 6.9)
@@ -232,7 +219,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 				for _, value := range values {
 					// 6.9.3.1.1)
 					err := generateNodeMap(value, nodeMap, activeGraph,
-						referencedNode, property, nil)
+						referencedNode, property, nil, idGenerator)
 					if err != nil {
 						return err
 					}
@@ -243,7 +230,8 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		}
 		// 6.10)
 		if graphVal, hasGraph := elementMap["@graph"]; hasGraph {
-			generateNodeMap(graphVal, nodeMap, id, nil, "", nil)
+			generateNodeMap(graphVal, nodeMap, id, nil, "", nil,
+				idGenerator)
 			delete(elementMap, "@graph")
 		}
 		// 6.11
@@ -252,7 +240,8 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 			value := elementMap[property]
 			// 6.11.1)
 			if strings.HasPrefix(property, "_:") {
-				//TODO set property to a blank node identifier
+				property = idGenerator.
+					generateBlankNodeIdentifier(&property)
 			}
 			// 6.11.2)
 			if _, hasProperty := node[property]; !hasProperty {
@@ -260,11 +249,33 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 				node[property] = tmpArray
 			}
 			// 6.11.3)
-			generateNodeMap(value, nodeMap, activeGraph, id, property, nil)
+			generateNodeMap(value, nodeMap, activeGraph, id, property,
+				nil, idGenerator)
 		}
 	}
 	return nil
 }
 
-//Blank node identifier
-//TODO figure out how to hold state of the blank node identifier
+type BlankNodeIdGenerator struct {
+	counter       int
+	identifierMap map[string]string
+}
+
+func (g *BlankNodeIdGenerator) generateBlankNodeIdentifier(identifier *string) string {
+	// 1)
+	if identifier != nil {
+		if id, hasId := g.identifierMap[*identifier]; hasId {
+			return id
+		}
+	}
+	// 2)
+	newId := "_:b" + *identifier
+	// 3)
+	g.counter += 1
+	// 4)
+	if identifier != nil {
+		g.identifierMap[*identifier] = newId
+	}
+	// 5)
+	return newId
+}
