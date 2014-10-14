@@ -4,18 +4,19 @@ import (
 	"strings"
 )
 
-func (c *Context) parse(localContext interface{},
+func parse(activeContext *Context, localContext interface{},
 	remoteContexts []string) (*Context, error) {
 	if remoteContexts == nil {
 		remoteContexts = make([]string, 0)
 	}
 	// 1)
-	result := c.clone()
+	//TODO write clone function
+	result := activeContext.clone()
 	// 2)
-	if _, ok := localContext.([]interface{}); !ok {
-		var temp interface{} = localContext
-		localContext = make([]interface{}, 0)
-		localContext = append(localContext.([]interface{}), temp)
+	if _, isArray := localContext.([]interface{}); !isArray {
+		tmpArray := make([]interface{}, 0)
+		tmpArray = append(tmpArray, localContext)
+		localContext = tmpArray
 	}
 	// 3)
 	for _, context := range localContext.([]interface{}) {
@@ -28,30 +29,30 @@ func (c *Context) parse(localContext interface{},
 		//Implementation overrides the base IRI.
 		if context == nil {
 			newContext := new(Context)
-			newContext.init(c.options)
+			newContext.init(activeContext.options)
 			result = newContext
 			continue
 		}
 		// 3.2)
-		if _, isString := context.(string); isString {
+		if contextString, isString := context.(string); isString {
 			// 3.2.1)
 			uri := result.table["@base"].(string)
 			//TODO resolve uri
 			// 3.2.2
 			isRecursive := false
 			for _, remoteContext := range remoteContexts {
-				if remoteContext == uri {
+				if remoteContext == contextString {
 					isRecursive = true
+					break
 				}
 			}
 			if isRecursive {
 				return nil, RECURSIVE_CONTEXT_INCLUSION
 			}
-			remoteContexts = append(remoteContexts, context.(string))
+			remoteContexts = append(remoteContexts, contextString)
 			// 3.2.3
-			rd := c.options.documentLoader.loadDocument(uri)
+			rd := activeContext.options.documentLoader.loadDocument(contextString)
 			var remoteContext interface{} = rd.document
-			//TODO is this check correct. Maybe needs to use the reflect package
 			remoteContextMap, isMap := remoteContext.(map[string]interface{})
 			_, containsContext := remoteContextMap["@context"]
 			if !isMap {
@@ -61,36 +62,36 @@ func (c *Context) parse(localContext interface{},
 			}
 			context = remoteContextMap["@context"]
 			// 3.2.4)
-			recursiveResult, parseErr := result.parse(context, remoteContexts)
+			recursiveResult, parseErr := parse(result, context, remoteContexts)
 			if parseErr == nil {
 				result = recursiveResult
+			} else {
+				return nil, parseErr
 			}
-			//TODO handle case when parseErr is not nil
 			// 3.2.5)
 			continue
 		}
 		// 3.3)
-		//TODO check JSON objects are already represented as maps
 		contextMap, isMap := context.(map[string]interface{})
 		if !isMap {
 			return nil, INVALID_LOCAL_CONTEXT
 		}
 		// 3.4)
 		// 3.4.1)
-		baseValue, containsBase := contextMap["@base"]
-		if len(remoteContexts) == 0 && containsBase {
+		value, hasBase := contextMap["@base"]
+		if len(remoteContexts) == 0 && hasBase {
 			// 3.4.2)
-			if baseValue == nil {
+			if value == nil {
 				delete(result.table, "@base")
-			} else if stringValue, isString := baseValue.(string); isString {
-				if isAbsoluteIri(stringValue) {
+			} else if valueString, isString := value.(string); isString {
+				//TODO check isAbsoluteIri
+				if isAbsoluteIri(valueString) {
 					// 3.4.3)
-					result.table["@base"] = stringValue
+					result.table["@base"] = valueString
 				} else {
-					//TODO check steps 3.4.4 and 3.4.5 are correctly implemented
 					// 3.4.4)
-					baseURI, isStringURI := result.table["@base"].(string)
-					if !isStringURI || !isAbsoluteIri(baseURI) {
+					baseURI := result.table["@base"]
+					if !isAbsoluteIri(baseURI.(string)) {
 						//3.4.5)
 						return nil, INVALID_BASE_IRI
 					}
@@ -103,15 +104,15 @@ func (c *Context) parse(localContext interface{},
 		}
 		// 3.5)
 		// 3.5.1)
-		vocabValue, containsVocab := contextMap["@vocab"]
-		if containsVocab {
+		value, hasVocab := contextMap["@vocab"]
+		if hasVocab {
 			// 3.5.2)
-			if vocabValue == nil {
+			if value == nil {
 				delete(result.table, "@vocab")
-			} else if stringValue, isString := vocabValue.(string); isString {
+			} else if valueString, isString := value.(string); isString {
 				// 3.5.3)
-				if isAbsoluteIri(stringValue) || isBlankNodeIdentifier(stringValue) {
-					result.table["@vocab"] = stringValue
+				if isAbsoluteIri(valueString) || isBlankNodeIdentifier(valueString) {
+					result.table["@vocab"] = valueString
 				} else {
 					return nil, INVALID_VOCAB_MAPPING
 				}
@@ -121,12 +122,12 @@ func (c *Context) parse(localContext interface{},
 		}
 		// 3.6)
 		// 3.6.1)
-		languageValue, containsLanguage := contextMap["@language"]
-		if containsLanguage {
-			if languageValue == nil {
+		value, hasLanguage := contextMap["@language"]
+		if hasLanguage {
+			if value == nil {
 				delete(result.table, "@language")
-			} else if stringValue, isString := languageValue.(string); isString {
-				result.table["@language"] = strings.ToLower(stringValue)
+			} else if valueString, isString := value.(string); isString {
+				result.table["@language"] = strings.ToLower(valueString)
 			} else {
 				return nil, INVALID_DEFAULT_LANGUAGE
 			}
@@ -137,13 +138,13 @@ func (c *Context) parse(localContext interface{},
 			if key == "@base" || key == "@vocab" || key == "@language" {
 				continue
 			}
-			result.createTermDefinition(contextMap, key, defined)
+			createTermDefinition(result, contextMap, key, defined)
 		}
 	}
 	return result, nil
 }
 
-func (c *Context) createTermDefinition(localContext map[string]interface{},
+func createTermDefinition(activeContext *Context, localContext map[string]interface{},
 	term string, defined map[string]bool) error {
 	// 1)
 	if definedValue, isDefined := defined[term]; isDefined {
@@ -159,53 +160,57 @@ func (c *Context) createTermDefinition(localContext map[string]interface{},
 		return KEYWORD_REDEFINITION
 	}
 	// 4)
-	delete(c.termDefinitions, term)
+	delete(activeContext.termDefinitions, term)
 	// 5)
 	var value interface{} = localContext[term]
 	// 6)
 	valueMap, isMap := value.(map[string]interface{})
 	if value == nil || (isMap && valueMap["@id"] == nil) {
-		c.termDefinitions[term] = nil
+		activeContext.termDefinitions[term] = nil
 		defined[term] = true
 		return nil
 	}
 	// 7)
 	if _, isString := value.(string); isString {
-		tempMap := make(map[string]interface{}, 0)
-		tempMap["@id"] = value
-		value = tempMap
+		tmpMap := make(map[string]interface{}, 0)
+		tmpMap["@id"] = value
+		value = tmpMap
+		// 8
+	} else {
+		if _, isMap := value.(map[string]interface{}); !isMap {
+			return INVALID_TERM_DEFINITION
+		}
 	}
-	// 8)
-	if !isMap {
-		return INVALID_TERM_DEFINITION
-	}
+	//Redifine valueMap
+	valueMap = value.(map[string]interface{})
 	//9)
 	definition := make(map[string]interface{}, 0)
 	// 10)
-	if typeVal, containsType := valueMap["@type"]; containsType {
+	if typeVal, hasType := valueMap["@type"]; hasType {
 		// 10.1)
 		typeString, isString := typeVal.(string)
 		if !isString {
 			return INVALID_TYPE_MAPPING
 		}
 		// 10.2)
-		//TODO handle typeErr
-		expandedType, typeErr := c.expandIri(typeString, false,
+		expandedType, expandErr := expandIri(activeContext, &typeString, false,
 			true, localContext, defined)
-		if typeErr == nil {
-			typeString = expandedType
+		if expandErr == nil {
+			typeString = *expandedType
+		} else {
+			return expandErr
 		}
-		//TODO handle error returned by expandIRI
-		if typeString != "@id" || typeString != "@vocab" || !isAbsoluteIri(typeString) {
+		if typeString != "@id" || typeString != "@vocab" ||
+			!isAbsoluteIri(typeString) {
 			return INVALID_TYPE_MAPPING
 		}
 		// 10.3)
 		definition["@type"] = typeString
 	}
 	// 11)
-	if reverse, containsReverse := valueMap["@reverse"]; containsReverse {
+	if reverse, hasReverse := valueMap["@reverse"]; hasReverse {
 		// 11.1)
-		if _, containsID := valueMap["@id"]; containsID {
+		if _, hasID := valueMap["@id"]; hasID {
 			return INVALID_REVERSE_PROPERTY
 		}
 		reverseString, isString := reverse.(string)
@@ -214,41 +219,46 @@ func (c *Context) createTermDefinition(localContext map[string]interface{},
 			return INVALID_IRI_MAPPING
 		}
 		// 11.3)
-		expandedReverse, reverseErr := c.expandIri(reverseString, false,
-			true, localContext, defined)
-		if reverseErr == nil {
-			reverseString = expandedReverse
+		expandedReverse, expandErr := expandIri(activeContext, &reverseString,
+			false, true, localContext, defined)
+		if expandErr == nil {
+			reverseString = *expandedReverse
+		} else {
+			return expandErr
 		}
 		if !isAbsoluteIri(reverseString) || !isBlankNodeIdentifier(reverseString) {
 			return INVALID_IRI_MAPPING
 		}
 		definition["@id"] = reverseString
 		// 11.4)
-		if container, containsContainer := valueMap["@container"]; containsContainer {
+		if container, hasContainer := valueMap["@container"]; hasContainer {
 			if container != "@set" || container != "@index" || container != nil {
 				return INVALID_REVERSE_PROPERTY
 			}
 			definition["@container"] = container
 		}
 		definition["@reverse"] = true
-		c.termDefinitions[term] = definition
+		activeContext.termDefinitions[term] = definition
 		defined[term] = true
 		return nil
 	}
 	//12)
 	definition["@reverse"] = false
 	// 13)
-	id, containsID := valueMap["@id"]
-	if containsID && id == term {
+	id, hasID := valueMap["@id"]
+	if hasID && id != term {
 		idString, isString := id.(string)
 		// 13.1)
 		if !isString {
 			return INVALID_IRI_MAPPING
 		}
 		// 13.2)
-		expandedID, idErr := c.expandIri(idString, false, true, localContext, defined)
-		if idErr == nil {
-			idString = expandedID
+		expandedID, expandErr := expandIri(activeContext, &idString, false,
+			true, localContext, defined)
+		if expandErr == nil {
+			idString = *expandedID
+		} else {
+			return expandErr
 		}
 		if isKeyword(idString) || isBlankNodeIdentifier(idString) ||
 			isAbsoluteIri(idString) {
@@ -265,27 +275,27 @@ func (c *Context) createTermDefinition(localContext map[string]interface{},
 		prefix := term[:colIndex]
 		suffix := term[colIndex+1:]
 		// 14.1)
-		if _, containsPrefix := localContext[prefix]; containsPrefix {
-			c.createTermDefinition(localContext, prefix, defined)
+		if _, hasPrefix := localContext[prefix]; hasPrefix {
+			createTermDefinition(activeContext, localContext, prefix, defined)
 		}
 		// 14.2)
-		prefixVal, containsPrefix := c.termDefinitions[prefix]
+		prefixVal, hasPrefix := activeContext.termDefinitions[prefix]
 		prefixMap, _ := prefixVal.(map[string]interface{})
-		if containsPrefix {
+		if hasPrefix {
 			definition["@id"] = prefixMap["@id"].(string) + suffix
 		} else {
-			//14/3
+			// 14.3)
 			definition["@id"] = term
 		}
-	} else if vocab, containsVocab := c.table["@vocab"]; containsVocab {
 		// 15)
+	} else if vocab, hasVocab := activeContext.table["@vocab"]; hasVocab {
 		definition["@id"] = vocab.(string) + term
 	} else {
 		return INVALID_IRI_MAPPING
 	}
 	// 16)
 	// 16.1)
-	if container, containsContainer := valueMap["@container"]; containsContainer {
+	if container, hasContainer := valueMap["@container"]; hasContainer {
 		// 16.2)
 		if container != "@list" || container != "@set" || container != "@index" ||
 			container != "@language" {
@@ -311,83 +321,86 @@ func (c *Context) createTermDefinition(localContext map[string]interface{},
 		}
 	}
 	//18
-	c.termDefinitions[term] = definition
+	activeContext.termDefinitions[term] = definition
 	defined[term] = true
 	return nil
 }
 
-func (c *Context) expandIri(value string, relative bool, vocab bool,
-	localContext map[string]interface{}, defined map[string]bool) (string, error) {
+func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
+	localContext map[string]interface{}, defined map[string]bool) (*string, error) {
 	//1)
-	//Using "" as nil value for strings (Go doesn't support strings of nil value)
-	if isKeyword(value) || value == "" {
-		return value, nil
+	if isKeyword(*value) || value == nil {
+		if value == nil {
+			return nil, nil
+		}
+		returnValue := *value
+		return &returnValue, nil
 	}
 	//2)
 	//TODO figure out what to do when value not in defined
 	//for now we take the if branch if value not in defined
 	//same thing as in step 4.3
-	_, containsValue := localContext[value]
-	definedValue, inDefined := defined[value]
-	if containsValue && (!inDefined || definedValue == false) {
-		createErr := c.createTermDefinition(localContext, value, defined)
+	_, hasValue := localContext[*value]
+	definedValue := defined[*value]
+	if localContext != nil && hasValue && definedValue == false {
+		createErr := createTermDefinition(activeContext, localContext,
+			*value, defined)
 		if createErr != nil {
-			//TODO handle error
+			return nil, createErr
 		}
 	}
 	// 3)
-	if td, hasTermDefinition := c.termDefinitions[value]; vocab && hasTermDefinition {
-		tdMap, isMap := td.(map[string]interface{})
-		idString, isString := tdMap["@id"].(string)
-		if isMap && isString {
-			return idString, nil
+	td, hasTermDefinition := activeContext.termDefinitions[*value]
+	if vocab && hasTermDefinition {
+		tdMap := td.(map[string]interface{})
+		if tdMap != nil {
+			returnValue := tdMap["@id"].(string)
+			return &returnValue, nil
 		}
-		//TODO check returning correct error
-		return "", INVALID_TERM_DEFINITION
+		return nil, nil
 	}
 	// 4)
-	if colIndex := strings.Index(value, ":"); colIndex >= 0 {
+	if colIndex := strings.Index(*value, ":"); colIndex >= 0 {
 		// 4.1)
-		prefix := value[:colIndex]
-		suffix := value[colIndex+1:]
+		prefix := (*value)[:colIndex]
+		suffix := (*value)[colIndex+1:]
 		// 4.2)
 		if prefix == "_" || strings.HasPrefix(suffix, "//") {
-			return value, nil
+			returnValue := *value
+			return &returnValue, nil
 		}
 		// 4.3)
 		_, containsPrefix := localContext[prefix]
 		definedPrefix, inDefined := defined[prefix]
 		if containsPrefix && (!inDefined || definedPrefix == false) {
-			createErr := c.createTermDefinition(localContext, prefix, defined)
+			createErr := createTermDefinition(activeContext, localContext,
+				prefix, defined)
 			if createErr != nil {
-				//TODO handle error
+				return nil, createErr
 			}
 		}
 		// 4.4)
-		if td, hasTermDefinition := c.termDefinitions[prefix]; hasTermDefinition {
-			tdMap, isMap := td.(map[string]interface{})
-			id, isString := tdMap["@id"].(string)
-			if isMap && isString {
-				return id + suffix, nil
-			}
-			//TODO check error handling
-			return "", INVALID_TERM_DEFINITION
+		td, hasTermDefinition := activeContext.termDefinitions[prefix]
+		if hasTermDefinition {
+			tdMap := td.(map[string]interface{})
+			id := tdMap["@id"].(string)
+			returnValue := id + suffix
+			return &returnValue, nil
 		}
 		// 4.5
 		return value, nil
 	}
 	// 5)
-	if vocabMapping, containsVocab := c.table["@vocab"]; vocab && containsVocab {
-		vocabString, isString := vocabMapping.(string)
-		if isString {
-			return vocabString + value, nil
-		}
-		//TODO check error handling
-		return "", INVALID_VOCAB_MAPPING
+	vocabMapping, hasVocab := activeContext.table["@vocab"]
+	if vocab && hasVocab {
+		returnValue := vocabMapping.(string) + *value
+		return &returnValue, nil
 	} else if relative {
 		// 6)
 		//TODO set value to the result of resolving value agains base IRI
+		//return JsonLdUrl.resolve((String) this.get("@base"), value);
 	}
 	// 7)
-	return value, nil
+	returnValue := *value
+	return &returnValue, nil
 }

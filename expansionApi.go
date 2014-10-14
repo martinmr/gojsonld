@@ -1,11 +1,10 @@
 package gojsonld
 
 import (
-	"sort"
 	"strings"
 )
 
-func expand(activeContext *Context, activeProperty string,
+func expand(activeContext *Context, activeProperty *string,
 	element interface{}) (interface{}, error) {
 	//1)
 	if element == nil {
@@ -13,10 +12,10 @@ func expand(activeContext *Context, activeProperty string,
 	}
 	// 2)
 	if isScalar(element) {
-		if activeProperty == "" || activeProperty == "@graph" {
+		if activeProperty == nil || *activeProperty == "@graph" {
 			return nil, nil
 		}
-		return expandValue(activeContext, activeProperty, element)
+		return expandValue(activeContext, *activeProperty, element)
 	}
 	// 3)
 	if elementArray, isArray := element.([]interface{}); isArray {
@@ -25,16 +24,14 @@ func expand(activeContext *Context, activeProperty string,
 		for _, item := range elementArray {
 			// 3.2.1)
 			expandedItem, expandErr := expand(activeContext, activeProperty, item)
-			//TODO verify handling error is done correctly
 			if expandErr != nil {
 				return nil, expandErr
 			}
 			// 3.2.2)
 			expandedArray, isArray := expandedItem.([]interface{})
-			_, isList := expandedItem.(map[string]interface{})["@list"]
-			if (activeProperty == "@list" ||
-				activeContext.getContainer(activeProperty) == "@list") &&
-				(isArray || isList) {
+			if (*activeProperty == "@list" ||
+				activeContext.getContainer(*activeProperty) == "@list") &&
+				(isArray || isListObject(expandedItem)) {
 				return nil, LIST_OF_LISTS
 			}
 			// 3.2.3)
@@ -52,13 +49,12 @@ func expand(activeContext *Context, activeProperty string,
 	// 4)
 	elementMap, isMap := element.(map[string]interface{})
 	if !isMap {
-		return nil, INVALID_INPUT
+		return nil, UNKNOWN_ERROR
 	}
 	// 5)
-	if context, containsContext := elementMap["@context"]; containsContext {
-		processedContext, processErr := activeContext.parse(context, nil)
+	if context, hasContext := elementMap["@context"]; hasContext {
+		processedContext, processErr := parse(activeContext, context, nil)
 		if processErr != nil {
-			//TODO check error handling is correct
 			return nil, processErr
 		}
 		activeContext = processedContext
@@ -66,11 +62,7 @@ func expand(activeContext *Context, activeProperty string,
 	// 6)
 	result := make(map[string]interface{}, 0)
 	//7
-	keys := make([]string, 0)
-	for key := range elementMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := sortedKeys(elementMap)
 	for _, key := range keys {
 		value := elementMap[key]
 		var expandedValue interface{}
@@ -79,72 +71,63 @@ func expand(activeContext *Context, activeProperty string,
 			continue
 		}
 		// 7.2)
-		expandedProperty, expandErr := activeContext.expandIri(key, false, true,
-			nil, nil)
+		expandedProperty, expandErr := expandIri(activeContext, &key,
+			false, true, nil, nil)
 		if expandErr != nil {
-			//TODO check error handling
 			return nil, expandErr
 		}
 		// 7.3)
 		//TODO check "" equals nil in expandedProperty == ""
-		if expandedProperty == "" || (!strings.Contains(expandedProperty, ":") &&
+		if expandedProperty == nil || (!strings.Contains(*expandedProperty, ":") &&
 			!isKeyword(expandedProperty)) {
 			continue
 		}
 		//7.4)
-		if isKeyword(expandedProperty) {
+		if isKeyword(*expandedProperty) {
 			// 7.4.1)
-			if activeProperty == "@reverse" {
+			if *activeProperty == "@reverse" {
 				return nil, INVALID_REVERSE_PROPERTY_MAP
 			}
 			// 7.4.2)
-			if _, containsProperty := result[expandedProperty]; containsProperty {
+			if _, hasProperty := result[*expandedProperty]; hasProperty {
 				return nil, COLLIDING_KEYWORDS
 			}
 			// 7.4.3)
 			if valueString, isString := value.(string); !isString &&
-				expandedProperty == "@id" {
+				*expandedProperty == "@id" {
 				return nil, INVALID_ID_VALUE
 			} else {
 				//TODO check passing nil values to expandIri does not break
 				// the code
-				tmpExpandedValue, expandedValueErr := activeContext.expandIri(valueString,
-					true, false, nil, nil)
-				if expandedValueErr == nil {
-					expandedValue = tmpExpandedValue
-				} else {
-					//TODO check error is being handled correctly
+				tmpExpandedValue, expandedValueErr := expandIri(activeContext,
+					&valueString, true, false, nil, nil)
+				if expandedValueErr != nil {
 					return nil, expandedValueErr
 				}
+				//TODO check if its safe to dereference
+				expandedValue = *tmpExpandedValue
 			}
 			// 7.4.4)
-			//TODO check logic is correct
 			valueString, isString := value.(string)
-			valueArray, isArray := value.([]interface{})
+			valueArray, isArray := value.([]string)
 			valueMap, isMap := value.(map[string]interface{})
-			if expandedProperty == "@type" {
+			if *expandedProperty == "@type" {
 				if isString {
-					tmpExpandedValue, expandErr := activeContext.expandIri(valueString,
-						true, true, nil, nil)
-					if expandErr == nil {
-						expandedValue = tmpExpandedValue
-					} else {
+					tmpExpandedValue, expandErr := expandIri(activeContext,
+						&valueString, true, true, nil, nil)
+					if expandErr != nil {
 						return nil, expandErr
 					}
+					expandedValue = *tmpExpandedValue
 				} else if isArray {
 					expandedArray := make([]string, 0)
 					for _, item := range valueArray {
-						if itemString, isItemString := item.(string); isItemString {
-							tmpExpandedValue, expandErr := activeContext.
-								expandIri(itemString, true, true, nil, nil)
-							if expandErr == nil {
-								expandedArray = append(expandedArray, tmpExpandedValue)
-							} else {
-								return nil, expandErr
-							}
-						} else {
-							return nil, INVALID_TYPE_VALUE
+						tmpExpandedValue, expandErr := expandIri(activeContext,
+							&item, true, true, nil, nil)
+						if expandErr != nil {
+							return nil, expandErr
 						}
+						expandedArray = append(expandedArray, *tmpExpandedValue)
 					}
 					expandedValue = expandedArray
 				} else if isMap {
@@ -158,16 +141,17 @@ func expand(activeContext *Context, activeProperty string,
 				}
 			}
 			// 7.4.5)
-			if expandedProperty == "@graph" {
-				tmpExpandedValue, expandErr := expand(activeContext, "@graph", value)
-				if expandErr == nil {
-					expandedValue = tmpExpandedValue
-				} else {
+			if *expandedProperty == "@graph" {
+				graphArg := "@graph"
+				tmpExpandedValue, expandErr := expand(activeContext,
+					&graphArg, value)
+				if expandErr != nil {
 					return nil, expandErr
 				}
+				expandedValue = tmpExpandedValue
 			}
 			// 7.4.6)
-			if expandedProperty == "@value" {
+			if *expandedProperty == "@value" {
 				if value != nil || !isScalar(value) {
 					return nil, INVALID_VALUE_OBJECT_VALUE
 				}
@@ -178,73 +162,67 @@ func expand(activeContext *Context, activeProperty string,
 				}
 			}
 			// 7.4.7)
-			if expandedProperty == "@language" {
+			if *expandedProperty == "@language" {
 				if !isString {
 					return nil, INVALID_LANGUAGE_TAGGED_STRING
 				}
 				expandedValue = strings.ToLower(valueString)
 			}
 			// 7.4.8)
-			if expandedProperty == "@index" {
+			if *expandedProperty == "@index" {
 				if !isString {
 					return nil, INVALID_INDEX_VALUE
 				}
 				expandedValue = value
 			}
 			// 7.4.9)
-			if expandedProperty == "@list" {
+			if *expandedProperty == "@list" {
 				// 7.4.9.1)
-				//TODO check empty string works the same as null
-				if activeProperty == "" || activeProperty == "@graph" {
+				if activeProperty == nil || *activeProperty == "@graph" {
 					continue
 				}
 				// 7.4.9.2)
 				tmpExpandedValue, expandErr := expand(activeContext, activeProperty,
 					value)
-				if expandErr == nil {
-					expandedValue = tmpExpandedValue
-				} else {
+				if expandErr != nil {
 					return nil, expandErr
 				}
-				if _, isExpandedList := expandedValue.([]interface{}); isExpandedList {
+				expandedValue = tmpExpandedValue
+				// 7.4.9.3)
+				if isListObject(expandedValue) {
 					return nil, LIST_OF_LISTS
 				}
 			}
 			// 7.4.10)
-			if expandedProperty == "@set" {
+			if *expandedProperty == "@set" {
 				tmpExpandedValue, expandErr := expand(activeContext, activeProperty,
 					value)
-				if expandErr == nil {
-					expandedValue = tmpExpandedValue
-				} else {
+				if expandErr != nil {
 					return nil, expandErr
 				}
+				expandedValue = tmpExpandedValue
 			}
 			// 7.4.11)
-			if expandedProperty == "@reverse" {
+			if *expandedProperty == "@reverse" {
 				if !isMap {
 					return nil, INVALID_REVERSE_VALUE
 				}
 				// 7.4.11.1)
-				tmpExpandedValue, expandErr := expand(activeContext, "@reverse",
+				reverseArg := "@reverse"
+				tmpExpandedValue, expandErr := expand(activeContext, &reverseArg,
 					value)
-				if expandErr == nil {
-					expandedValue = tmpExpandedValue
-				} else {
+				if expandErr != nil {
 					return nil, expandErr
 				}
+				expandedValue = tmpExpandedValue
 				// 7.4.11.2)
-				expandedValueMap, isExpandedMap := expandedValue.(map[string]interface{})
-				if !isExpandedMap {
-					//TODO check error handling
-					return nil, UNKNOWN_ERROR
-				}
-				reverse, containsReserve := expandedValueMap["@reverse"]
+				expandedValueMap := expandedValue.(map[string]interface{})
+				reverse, hasReserve := expandedValueMap["@reverse"]
 				reverseMap, isReverseMap := reverse.(map[string]interface{})
-				if containsReserve && isReverseMap {
+				if hasReserve && isReverseMap {
 					for property, item := range reverseMap {
 						// 7.4.11.2.1)
-						if _, containsProperty := result[property]; !containsProperty {
+						if _, hasProperty := result[property]; !hasProperty {
 							result[property] = make([]interface{}, 0)
 						}
 						// 7.4.11.2.1)
@@ -254,41 +232,32 @@ func expand(activeContext *Context, activeProperty string,
 					}
 				}
 				// 7.4.11.3)
-				if containsReserve && len(expandedValueMap) > 1 {
+				if hasReserve && len(expandedValueMap) > 1 {
 					// 7.4.11.3.1)
-					if _, containsReserve := result["@reverse"]; !containsReserve {
+					if _, hasReserve := result["@reverse"]; !hasReserve {
 						result["@reverse"] = make(map[string]interface{})
 					}
 					// 7.4.11.3.2)
 					// Naming the mapping of reverse in result to reverse result instead
-					// of reverse map as in the spec because I am already using reverseMap
-					// to hold the casting to a map of the variable reverse
-					//TODO check that changes to reverseResultMap are reflected in reverseResult
+					// of reverse map as in the spec because I am already using
+					// reverseMap to hold the casting to a map of the variable reverse
 					reverseResult := result["@reverse"]
-					reverseResultMap, isResultMap := reverseResult.(map[string]interface{})
-					if !isResultMap {
-						//TODO check error handling
-						return nil, UNKNOWN_ERROR
-					}
+					reverseResultMap := reverseResult.(map[string]interface{})
 					// 7.4.11.3.3)
 					for property, items := range expandedValueMap {
 						if property == "@reverse" {
 							continue
 						}
 						// 7.4.11.3.3.1)
-						itemsArray, isItemsArray := items.([]interface{})
-						if !isItemsArray {
-							//TODO check error handling
-							return nil, UNKNOWN_ERROR
-						}
+						itemsArray := items.([]interface{})
 						for _, item := range itemsArray {
 							// 7.4.11.3.3.1.1)
 							if isListObject(item) || isValueObject(item) {
 								return nil, INVALID_REVERSE_PROPERTY_VALUE
 							}
 							// 7.4.11.3.3.1.2)
-							_, containsProperty := reverseResultMap[property]
-							if !containsProperty {
+							_, hasProperty := reverseResultMap[property]
+							if !hasProperty {
 								reverseResultMap[property] = make([]interface{}, 0)
 							}
 							// 7.4.11.3.3.1.3)
@@ -296,30 +265,25 @@ func expand(activeContext *Context, activeProperty string,
 							reverseResultMap[property] = append(reverseArray, item)
 						}
 					}
-					//Reassign in case reverseResultMap is a copy of the original
-					result["@reverse"] = reverseResultMap
 				}
 				// 7.4.11.4)
 				continue
 			}
+			//TODO java code differs from spec here
 			// 7.4.12)
 			if expandedValue != nil {
-				result[expandedProperty] = expandedValue
+				result[*expandedProperty] = expandedValue
 			}
 			// 7.4.13)
 			continue
+			// 7.5)
 		} else if _, isValueMap := value.(map[string]interface{}); isValueMap &&
 			activeContext.getContainer(key) == "@language" {
-			// 7.5)
 			// 7.5.1)
 			valueMap := value.(map[string]interface{})
 			expandedValue = make([]interface{}, 0)
 			// 7.5.2)
-			keys := make([]string, 0)
-			for key := range valueMap {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
+			keys := sortedKeys(valueMap)
 			for _, language := range keys {
 				languageValue := valueMap[language]
 				// 7.5.2.1)
@@ -328,8 +292,8 @@ func expand(activeContext *Context, activeProperty string,
 					tmpArray = append(tmpArray, languageValue)
 					languageValue = tmpArray
 				}
-				languageArray := languageValue.([]interface{})
 				// 7.5.2.2)
+				languageArray := languageValue.([]interface{})
 				for _, item := range languageArray {
 					if _, isString := item.(string); !isString {
 						return nil, INVALID_LANGUAGE_MAP_VALUE
@@ -337,21 +301,18 @@ func expand(activeContext *Context, activeProperty string,
 					newLanguageMap := make(map[string]interface{})
 					newLanguageMap["@language"] = strings.ToLower(language)
 					newLanguageMap["@value"] = item
-					expandedValue = append(expandedValue.([]interface{}), newLanguageMap)
+					expandedValue = append(expandedValue.([]interface{}),
+						newLanguageMap)
 				}
 			}
+			// 7.6)
 		} else if _, isValueMap := value.(map[string]interface{}); isValueMap &&
 			activeContext.getContainer(key) == "@index" {
-			// 7.6)
 			// 7.1.6)
 			valueMap := value.(map[string]interface{})
 			expandedValue = make([]interface{}, 0)
 			// 7.6.2)
-			keys := make([]string, 0)
-			for key := range valueMap {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
+			keys := sortedKeys(valueMap)
 			for _, index := range keys {
 				indexValue := valueMap[index]
 				// 7.6.2.1)
@@ -361,41 +322,38 @@ func expand(activeContext *Context, activeProperty string,
 					indexValue = tmpArray
 				}
 				// 7.6.2.2)
-				tmpIndexValue, expandErr := expand(activeContext, key, indexValue)
-				if expandErr == nil {
-					indexValue = tmpIndexValue
-				} else {
+				tmpIndexValue, expandErr := expand(activeContext, &key, indexValue)
+				if expandErr != nil {
 					return nil, expandErr
 				}
+				indexValue = tmpIndexValue
 				// 7.6.2.3)
 				indexArray := indexValue.([]interface{})
 				for _, item := range indexArray {
-					itemMap, isItemMap := item.(map[string]interface{})
-					//TODO check error handling
-					if !isItemMap {
-						return nil, UNKNOWN_ERROR
-					}
-					if _, containsIndex := itemMap["@index"]; !containsIndex {
+					// 7.6.2.3.1)
+					itemMap := item.(map[string]interface{})
+					if _, hasIndex := itemMap["@index"]; !hasIndex {
 						itemMap["@index"] = index
 					}
+					// 7.6.2.3.2)
 					expandedValue = append(expandedValue.([]interface{}), item)
 				}
 			}
 		} else {
 			// 7.7)
-			tmpExpandedValue, tmpErr := expand(activeContext, key, value)
-			if tmpErr == nil {
-				expandedValue = tmpExpandedValue
-			} else {
+			tmpExpandedValue, tmpErr := expand(activeContext, &key, value)
+			if tmpErr != nil {
 				return nil, expandErr
 			}
+			expandedValue = tmpExpandedValue
 		}
 		// 7.8)
 		if expandedValue == nil {
 			continue
 		}
 		// 7.9)
-		if !isListObject(expandedValue) && "@list" == activeContext.getContainer(key) {
+		if !isListObject(expandedValue) &&
+			"@list" == activeContext.getContainer(key) {
 			if _, isValueArray := expandedValue.([]interface{}); !isValueArray {
 				tmpArray := make([]interface{}, 0)
 				tmpArray = append(tmpArray, expandedValue)
@@ -404,18 +362,14 @@ func expand(activeContext *Context, activeProperty string,
 			tmpMap := make(map[string]interface{}, 0)
 			tmpMap["@list"] = expandedValue
 			expandedValue = tmpMap
-		} else if activeContext.isReverseProperty(key) {
 			// 7.10)
+		} else if activeContext.isReverseProperty(key) {
 			// 7.10.1)
-			if _, containsReverse := result["@reverse"]; !containsReverse {
+			if _, hasReverse := result["@reverse"]; !hasReverse {
 				result["@reverse"] = make(map[string]interface{})
 			}
 			// 7.10.2)
-			reverseMap, isReverseMap := result["@reverse"].(map[string]interface{})
-			if !isReverseMap {
-				//TODO check error handling
-				return nil, UNKNOWN_ERROR
-			}
+			reverseMap := result["@reverse"].(map[string]interface{})
 			// 7.10.3)
 			if _, isExpandedArray := expandedValue.([]interface{}); !isExpandedArray {
 				tmpArray := make([]interface{}, 0)
@@ -430,50 +384,49 @@ func expand(activeContext *Context, activeProperty string,
 					return nil, INVALID_REVERSE_PROPERTY_VALUE
 				}
 				// 7.10.4.2)
-				if _, containsProperty := reverseMap[expandedProperty]; !containsProperty {
-					reverseMap[expandedProperty] = make([]interface{}, 0)
+				_, hasProperty := reverseMap[*expandedProperty]
+				if !hasProperty {
+					reverseMap[*expandedProperty] = make([]interface{}, 0)
 				}
 				// 7.10.4.3)
 				//TODO check if list needs to be handled different
-				reverseMap[expandedProperty] = append(reverseMap[expandedProperty].([]interface{}),
-					item)
+				reverseMap[*expandedProperty] = append(
+					reverseMap[*expandedProperty].([]interface{}), item)
 			}
 		} else if !activeContext.isReverseProperty(key) {
 			// 7.11)
 			// 7.11.1)
-			if _, containsProperty := result[expandedProperty]; !containsProperty {
-				result[expandedProperty] = make([]interface{}, 0)
+			if _, hasProperty := result[*expandedProperty]; !hasProperty {
+				result[*expandedProperty] = make([]interface{}, 0)
 			}
 			// 7.11.2
 			//TODO check if need to handle lists differently
-			result[expandedProperty] = append(result[expandedProperty].([]interface{}),
+			result[*expandedProperty] = append(result[*expandedProperty].([]interface{}),
 				expandedValue)
 		}
 	}
 	// 8)
-	if value, containsValue := result["@value"]; containsValue {
+	if value, hasValue := result["@value"]; hasValue {
 		//8.1)
 		if !isValidValueObject(value) {
 			return nil, INVALID_VALUE_OBJECT
 		}
 		// 8.2)
 		if value == nil {
-			//TODO what if value is a string and equals ""
-			//should we consider that as a nil value for the string type
 			result = nil
-		} else if _, isValueString := value.(string); !isValueString {
 			// 8.3)
-			if _, containsLanguage := result["@language"]; containsLanguage {
+		} else if _, isValueString := value.(string); !isValueString {
+			if _, hasLanguage := result["@language"]; hasLanguage {
 				return nil, INVALID_LANGUAGE_TAGGED_VALUE
 			}
-		} else if typeVal, containsType := result["@type"]; containsType {
+		} else if typeVal, hasType := result["@type"]; hasType {
 			// 8.4)
 			//TODO complete isIRI method
 			if !isIRI(typeVal) {
 				return nil, INVALID_TYPED_VALUE
 			}
 		}
-	} else if typeVal, containsType := result["@type"]; containsType {
+	} else if typeVal, hasType := result["@type"]; hasType {
 		// 9)
 		if _, isTypeArray := typeVal.([]interface{}); !isTypeArray {
 			tmpArray := make([]interface{}, 0)
@@ -481,14 +434,13 @@ func expand(activeContext *Context, activeProperty string,
 			result["@type"] = tmpArray
 		}
 	} else {
-		//TODO make sure logic is still correct
 		// 10)
-		_, containsSet := result["@set"]
-		_, containsList := result["@list"]
-		if containsSet || containsList {
+		_, hasSet := result["@set"]
+		_, hasList := result["@list"]
+		if hasSet || hasList {
 			// 10.1)
 			maxLen := 0
-			if _, containsIndex := result["@index"]; containsIndex {
+			if _, hasIndex := result["@index"]; hasIndex {
 				maxLen = 2
 			} else {
 				maxLen = 1
@@ -497,7 +449,7 @@ func expand(activeContext *Context, activeProperty string,
 				return nil, INVALID_SET_OR_LIST_OBJECT
 			}
 			// 10.2)
-			if containsSet {
+			if hasSet {
 				// TODO check comment's validity
 				// result becomes an array here, thus the remaining checks
 				// will never be true from here on
@@ -509,21 +461,19 @@ func expand(activeContext *Context, activeProperty string,
 		}
 	}
 	// 11)
-	if _, containsLanguage := result["@language"]; containsLanguage &&
+	if _, hasLanguage := result["@language"]; hasLanguage &&
 		len(result) == 1 {
 		result = nil
 	}
 	// 12)
-	// TODO check that checking for "" instead of nil does not break the algorithm
-	if activeProperty == "" || activeProperty == "@graph" {
+	if activeProperty == nil || *activeProperty == "@graph" {
 		// 12.1)
-		_, containsValue := result["@value"]
-		_, containsList := result["@list"]
-		_, containsID := result["@id"]
-		//TODO check it's correct to test if result != nil
-		if result != nil && (len(result) == 0 || containsList || containsValue) {
+		_, hasValue := result["@value"]
+		_, hasList := result["@list"]
+		_, hasID := result["@id"]
+		if result != nil && (len(result) == 0 || hasList || hasValue) {
 			result = nil
-		} else if result != nil && len(result) == 1 && containsID {
+		} else if result != nil && len(result) == 1 && hasID {
 			// 12.2)
 			result = nil
 		}
@@ -545,10 +495,11 @@ func expandValue(activeContext *Context, activeProperty string,
 	termDefinitions := activeContext.termDefinitions
 	typeValue, hasType := termDefinitions["@type"]
 	if hasType && typeValue == "@id" {
-		expandedValue, expandErr := activeContext.expandIri(value.(string),
+		valueString := value.(string)
+		expandedValue, expandErr := expandIri(activeContext, &valueString,
 			true, false, nil, nil)
 		if expandErr == nil {
-			result["@id"] = expandedValue
+			result["@id"] = *expandedValue
 			return result, nil
 		} else {
 			return nil, expandErr
@@ -556,10 +507,11 @@ func expandValue(activeContext *Context, activeProperty string,
 	}
 	// 2)
 	if hasType && typeValue == "@vocab" {
-		expandedValue, expandErr := activeContext.expandIri(value.(string), true, true, nil, nil)
+		valueString := value.(string)
+		expandedValue, expandErr := expandIri(activeContext, &valueString,
+			true, true, nil, nil)
 		if expandErr == nil {
-			// TODO make sure key is actually @id
-			result["@id"] = expandedValue
+			result["@id"] = *expandedValue
 			return result, nil
 		} else {
 			return nil, expandErr
@@ -573,13 +525,12 @@ func expandValue(activeContext *Context, activeProperty string,
 	} else if _, isString := value.(string); isString {
 		// 5.1)
 		if language, hasLanguage := termDefinitions["@language"]; hasLanguage {
-			_, isString := language.(string)
-			//TODO check if we need to check for the empty string
-			if isString {
+			if language != nil {
 				result["@language"] = language
-			} else if defaultLanguage, hasDefaultLanguage := activeContext.table["language"]; hasDefaultLanguage {
-				result["@language"] = defaultLanguage
 			}
+			// 5.2)
+		} else if defaultLanguage, hasDefaultLanguage := activeContext.table["language"]; hasDefaultLanguage {
+			result["@language"] = defaultLanguage
 		}
 	}
 	// 6)

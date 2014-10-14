@@ -485,7 +485,7 @@ func (c *Context) isReverseProperty(property string) bool {
 	}
 	reverse := td["@reverse"]
 	reverseBool, isBool := reverse.(bool)
-	return reverse != nil && isBool && reverseBool
+	return isBool && reverseBool
 }
 
 func (c *Context) getTypeMapping(property string) (string, bool) {

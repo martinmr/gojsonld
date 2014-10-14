@@ -34,7 +34,7 @@ var (
 func isKeyword(key interface{}) bool {
 	switch s := key.(type) {
 	case string:
-		return allKeywords[s]
+		return allKeywords[s.(string)]
 	}
 	return false
 }
@@ -124,7 +124,7 @@ func mergeValue(obj map[string]interface{}, key string, value interface{}) {
 	}
 	switch v := value.(type) {
 	case map[string]interface{}:
-		if _, ex := v["@list"]; ex {
+		if _, ex := (v.(map[string]interface{}))["@list"]; ex {
 			values = append(values, value)
 			obj[key] = values
 			return
