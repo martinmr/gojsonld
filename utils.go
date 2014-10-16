@@ -198,6 +198,21 @@ func isAbsoluteIri(value string) bool {
 	return strings.Contains(value, ":")
 }
 
+func isIRI(value interface{}) bool {
+	//TODO improve function
+	valueString, isString := value.(string)
+	if !isString {
+		return false
+	}
+	if strings.HasPrefix(valueString, "_") {
+		return false
+	}
+	if !strings.Contains(valueString, ":") {
+		return false
+	}
+	return true
+}
+
 // /**
 //  * Returns true if the given value is a subject with properties.
 //  *
