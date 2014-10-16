@@ -42,8 +42,11 @@ func compact(activeContext *Context, activeProperty string,
 	_, hasID := elementMap["@id"]
 	_, hasValue := elementMap["@value"]
 	if hasID || hasValue {
-		compactedValue := compactValue(activeContext, activeProperty,
-			elementMap)
+		compactedValue, compactErr := compactValue(activeContext,
+			activeProperty, elementMap)
+		if compactErr != nil {
+			return nil, compactErr
+		}
 		if isScalar(compactedValue) {
 			return compactedValue, nil
 		}
@@ -61,9 +64,12 @@ func compact(activeContext *Context, activeProperty string,
 		if expandedProperty == "@id" || expandedProperty == "@type" {
 			// 7.1.1)
 			if valueString, isString := expandedValue.(string); isString {
-				//TODO handle default value of call to compactIri
-				compactedValue = *compactIri(activeContext, &valueString, nil,
-					expandedProperty == "@type", false)
+				tmpValue, compactErr := compactIri(activeContext,
+					&valueString, nil, expandedProperty == "@type", false)
+				if compactErr != nil {
+					return nil, compactErr
+				}
+				compactedValue = *tmpValue
 				// 7.1.2)
 			} else {
 				// 7.1.2.1)
@@ -71,11 +77,13 @@ func compact(activeContext *Context, activeProperty string,
 				// 7.1.2.2)
 				expandedArray := expandedValue.([]string)
 				for _, expandedType := range expandedArray {
-					//TODO handle default reverse value
-					tmpCompact := *compactIri(activeContext, &expandedType,
+					tmpCompact, compactErr := compactIri(activeContext, &expandedType,
 						nil, true, false)
+					if compactErr != nil {
+						return nil, compactErr
+					}
 					compactedValue = append(compactedValue.([]string),
-						tmpCompact)
+						*tmpCompact)
 				}
 				// 7.1.2.3)
 				if len(compactedValue.([]string)) == 1 {
@@ -83,11 +91,13 @@ func compact(activeContext *Context, activeProperty string,
 				}
 			}
 			// 7.1.3)
-			//TODO handle defaults
-			alias := *compactIri(activeContext, &expandedProperty,
+			alias, compactErr := compactIri(activeContext, &expandedProperty,
 				nil, true, false)
+			if compactErr != nil {
+				return nil, compactErr
+			}
 			// 7.1.4)
-			result[alias] = compactedValue
+			result[*alias] = compactedValue
 			continue
 		}
 		// 7.2)
@@ -142,10 +152,13 @@ func compact(activeContext *Context, activeProperty string,
 			if len(compactedMap) > 0 {
 				// 7.2.3.1)
 				reverseArg := "@reverse"
-				alias := *compactIri(activeContext, &reverseArg,
+				alias, compactErr := compactIri(activeContext, &reverseArg,
 					nil, true, false)
+				if compactErr != nil {
+					return nil, compactErr
+				}
 				// 7.2.3.2)
-				result[alias] = compactedValue
+				result[*alias] = compactedValue
 			}
 			// 7.2.4)
 			continue
@@ -158,19 +171,25 @@ func compact(activeContext *Context, activeProperty string,
 		} else if "@index" == activeProperty || "@value" == activeProperty ||
 			"@language" == activeProperty {
 			// 7.4.1)
-			//TODO handle defaults
-			alias := *compactIri(activeContext, &expandedProperty,
+			alias, compactErr := compactIri(activeContext, &expandedProperty,
 				nil, true, false)
+			if compactErr != nil {
+				return nil, compactErr
+			}
 			// 7.4.2)
-			result[alias] = expandedValue
+			result[*alias] = expandedValue
 			continue
 		}
 		// 7.5)
 		expandedArray, isExpandedArray := expandedValue.([]interface{})
 		if isExpandedArray && len(expandedArray) == 0 {
 			// 7.5.1)
-			itemActiveProperty := *compactIri(activeContext, &expandedProperty,
-				expandedValue, true, insideReverse)
+			tmpProperty, compactErr := compactIri(activeContext,
+				&expandedProperty, expandedValue, true, insideReverse)
+			if compactErr != nil {
+				return nil, compactErr
+			}
+			itemActiveProperty := *tmpProperty
 			// 7.5.2)
 			activeValue, hasActiveProperty := result[itemActiveProperty]
 			if !hasActiveProperty {
@@ -188,8 +207,12 @@ func compact(activeContext *Context, activeProperty string,
 		expandedArray = expandedValue.([]interface{})
 		for _, expandedItem := range expandedArray {
 			// 7.6.1)
-			itemActiveProperty := *compactIri(activeContext, &expandedProperty,
+			tmpProperty, compactErr := compactIri(activeContext, &expandedProperty,
 				expandedItem, true, insideReverse)
+			if compactErr != nil {
+				return nil, compactErr
+			}
+			itemActiveProperty := *tmpProperty
 			// 7.6.2)
 			container := activeContext.getContainer(itemActiveProperty)
 			// 7.6.3)
@@ -222,19 +245,24 @@ func compact(activeContext *Context, activeProperty string,
 					//TODO check default values. Java version is differrent
 					// vocab = true
 					listArg := "@list"
-					listKey := *compactIri(activeContext, &listArg, nil,
-						false, false)
+					listKey, compactErr := compactIri(activeContext,
+						&listArg, nil, false, false)
+					if compactErr != nil {
+						return nil, compactErr
+					}
 					tmpMap := make(map[string]interface{}, 0)
-					tmpMap[listKey] = compactedItem
+					tmpMap[*listKey] = compactedItem
 					compactedItem = tmpMap
 					// 7.6.4.2.2)
 					index, hasIndex := expandedItem.(map[string]interface{})["@index"]
 					if hasIndex {
-						//TODO check defaults
 						indexArg := "@index"
-						indexKey := *compactIri(activeContext, &indexArg, nil,
-							false, false)
-						compactedItem.(map[string]interface{})[indexKey] = index
+						indexKey, compactErr := compactIri(activeContext,
+							&indexArg, nil, false, false)
+						if compactErr != nil {
+							return nil, compactErr
+						}
+						compactedItem.(map[string]interface{})[*indexKey] = index
 					}
 				} else if _, hasProperty := result[itemActiveProperty]; hasProperty {
 					// 7.6.4.3
@@ -358,7 +386,6 @@ func (activeContext *Context) getInverse() map[string]interface{} {
 		// 3.7)
 		typeLanguageMap := containerMap[container].(map[string]interface{})
 		// 3.8)
-		//TODO check equality is orrect
 		if definition["@reverse"] == true {
 			// 3.8.1)
 			typeMap := typeLanguageMap["@type"].(map[string]interface{})
@@ -417,15 +444,14 @@ func (activeContext *Context) getInverse() map[string]interface{} {
 }
 
 func compactIri(activeContext *Context, iri *string,
-	value interface{}, vocab bool, reverse bool) *string {
+	value interface{}, vocab bool, reverse bool) (*string, error) {
 	// 1)
 	if iri == nil {
-		return nil
+		return nil, nil
 	}
 	// 2)
-	//TODO set activeContext.inverse
-	activeContext.getInverse()
-	if _, hasIri := activeContext.inverse[*iri]; hasIri && vocab == true {
+	inverseContext := activeContext.getInverse()
+	if _, hasIri := inverseContext[*iri]; hasIri && vocab == true {
 		// 2.1)
 		defaultLanguage := "@none"
 		if language, hasLanguage := activeContext.table["@language"]; hasLanguage {
@@ -562,8 +588,12 @@ func compactIri(activeContext *Context, iri *string,
 			hasID {
 			// 2.12.1)
 			idString := id.(string)
-			result := *compactIri(activeContext, &idString, nil, true, true)
-			tdResult, hasDefinition := activeContext.termDefinitions[result]
+			resultKey, compactErr := compactIri(activeContext, &idString,
+				nil, true, true)
+			if compactErr != nil {
+				return nil, compactErr
+			}
+			tdResult, hasDefinition := activeContext.termDefinitions[*resultKey]
 			resultIri, hasIri := tdResult.(map[string]interface{})["@id"]
 			valueIri := value.(map[string]interface{})["@id"]
 			if hasDefinition && hasIri && valueIri.(string) == resultIri.(string) {
@@ -587,7 +617,7 @@ func compactIri(activeContext *Context, iri *string,
 		// 2.15)
 		if term != nil {
 			returnValue := *term
-			return &returnValue
+			return &returnValue, nil
 		}
 	}
 	// 3)
@@ -598,7 +628,7 @@ func compactIri(activeContext *Context, iri *string,
 			tmpIri := *iri
 			suffix := tmpIri[len(vocabContext.(string)):]
 			if _, hasSuffix := activeContext.termDefinitions[suffix]; !hasSuffix {
-				return &suffix
+				return &suffix, nil
 			}
 		}
 	}
@@ -633,15 +663,21 @@ func compactIri(activeContext *Context, iri *string,
 	// 6)
 	if compactIri != "" {
 		returnValue := compactIri
-		return &returnValue
+		return &returnValue, nil
 	}
 	// 7)
 	tmpIri := *iri
 	if !vocab {
-		//TODO remove base from iri
+		relativeIri, removeErr := removeBase(activeContext.table["@base"].(string),
+			*iri)
+		//TODO handle error
+		if removeErr != nil {
+			return nil, removeErr
+		}
+		tmpIri = relativeIri
 	}
 	//8
-	return &tmpIri
+	return &tmpIri, nil
 }
 
 func selectTerm(activeContext *Context, iri string, containers []string,
@@ -678,7 +714,7 @@ func selectTerm(activeContext *Context, iri string, containers []string,
 //Value Compaction Algorithm
 //http://json-ld.org/spec/latest/json-ld-api/#value-compaction
 func compactValue(activeContext *Context, activeProperty string,
-	value map[string]interface{}) interface{} {
+	value map[string]interface{}) (interface{}, error) {
 	// 1)
 	numberMembers := len(value)
 	// 2)
@@ -688,7 +724,7 @@ func compactValue(activeContext *Context, activeProperty string,
 	}
 	// 3)
 	if numberMembers > 2 {
-		return value
+		return value, nil
 	}
 	// 4)
 	typeMapping, _ := activeContext.getTypeMapping(activeProperty)
@@ -697,21 +733,29 @@ func compactValue(activeContext *Context, activeProperty string,
 		idString := id.(string)
 		// 4.1)
 		if numberMembers == 1 && "@id" == typeMapping {
-			compactedIri := compactIri(activeContext, &idString, nil, false, false)
-			return *compactedIri
+			compactedIri, compactErr := compactIri(activeContext, &idString,
+				nil, false, false)
+			if compactErr != nil {
+				return nil, compactErr
+			}
+			return *compactedIri, nil
 		}
 		// 4.2)
 		if numberMembers == 1 && "@vocab" == typeMapping {
-			compactedIri := compactIri(activeContext, &idString, nil, true, false)
-			return *compactedIri
+			compactedIri, compactErr := compactIri(activeContext, &idString,
+				nil, true, false)
+			if compactErr != nil {
+				return nil, compactErr
+			}
+			return *compactedIri, nil
 		}
-		return value
+		return value, nil
 	}
 	// 5)
 	var valueValue interface{} = value["@value"]
 	if typeKey, hasType := value["@type"]; hasType &&
 		typeKey.(string) == typeMapping {
-		return valueValue
+		return valueValue, nil
 	}
 	// 6)
 	language, _ := value["@language"]
@@ -720,7 +764,7 @@ func compactValue(activeContext *Context, activeProperty string,
 	if isString &&
 		(languageString == languageMapping ||
 			languageString == activeContext.table["@language"]) {
-		return valueValue
+		return valueValue, nil
 	}
 	// 7)
 	_, isString = valueValue.(string)
@@ -729,8 +773,8 @@ func compactValue(activeContext *Context, activeProperty string,
 	activePropertyLanguage, hasLanguage := termDefinition["@language"]
 	if numberMembers == 1 && (!isString || !hasDefaultLanguage ||
 		(hasLanguage && activePropertyLanguage == nil)) {
-		return valueValue
+		return valueValue, nil
 	}
 	// 8)
-	return value
+	return value, nil
 }

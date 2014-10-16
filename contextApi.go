@@ -37,7 +37,11 @@ func parse(activeContext *Context, localContext interface{},
 		if contextString, isString := context.(string); isString {
 			// 3.2.1)
 			uri := result.table["@base"].(string)
-			//TODO resolve uri
+			absoluteUri, resolveErr := resolve(uri, contextString)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			uri = absoluteUri
 			// 3.2.2
 			isRecursive := false
 			for _, remoteContext := range remoteContexts {
@@ -51,7 +55,11 @@ func parse(activeContext *Context, localContext interface{},
 			}
 			remoteContexts = append(remoteContexts, contextString)
 			// 3.2.3
-			rd := activeContext.options.documentLoader.loadDocument(contextString)
+			rd, loadErr := activeContext.options.documentLoader.
+				loadDocument(contextString)
+			if loadErr != nil {
+				return nil, loadErr
+			}
 			var remoteContext interface{} = rd.document
 			remoteContextMap, isMap := remoteContext.(map[string]interface{})
 			_, containsContext := remoteContextMap["@context"]
@@ -397,8 +405,12 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 		return &returnValue, nil
 	} else if relative {
 		// 6)
-		//TODO set value to the result of resolving value agains base IRI
-		//return JsonLdUrl.resolve((String) this.get("@base"), value);
+		absoluteUri, resolveErr := resolve(activeContext.table["@base"].(string),
+			*value)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		return &absoluteUri, nil
 	}
 	// 7)
 	returnValue := *value

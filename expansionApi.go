@@ -104,7 +104,6 @@ func expand(activeContext *Context, activeProperty *string,
 				if expandedValueErr != nil {
 					return nil, expandedValueErr
 				}
-				//TODO check if its safe to dereference
 				expandedValue = *tmpExpandedValue
 			}
 			// 7.4.4)
@@ -480,12 +479,6 @@ func expand(activeContext *Context, activeProperty *string,
 	}
 	// 13)
 	return result, nil
-	//TODO figure out if something needs to be done with the below paragraph
-	//If, after the above algorithm is run, the result is a JSON object
-	//that contains only an @graph key, set the result to the value of @graph's
-	//value. Otherwise, if the result is null, set it to an empty array.
-	//Finally, if the result is not an array, then set the result to an array
-	//containing only the result
 }
 
 func expandValue(activeContext *Context, activeProperty string,

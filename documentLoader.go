@@ -1,6 +1,8 @@
 package gojsonld
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 )
 
@@ -16,7 +18,24 @@ func NewDocumentLoader() *DocumentLoader {
 	}
 }
 
-func (dl *DocumentLoader) loadDocument(uri string) *RemoteDocument {
-    //TODO write this function
-    return nil
+func (dl *DocumentLoader) loadDocument(uri string) (*RemoteDocument, error) {
+	req, reqErr := http.NewRequest("GET", uri, nil)
+	if reqErr != nil {
+		return nil, reqErr
+	}
+	req.Header.Set("Accept", ACCEPT_HEADER)
+	res, resErr := dl.httpClient.Do(req)
+	if resErr != nil {
+		return nil, resErr
+	}
+	body, readErr := ioutil.ReadAll(res.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
+	var jsonBody interface{}
+	jsonErr := json.Unmarshal(body, &jsonBody)
+	if jsonErr != nil {
+		return nil, jsonErr
+	}
+	return NewRemoteDocument(uri, jsonBody), nil
 }

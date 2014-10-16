@@ -1,26 +1,31 @@
 package gojsonld
 
 import (
+	"strconv"
 	"strings"
 )
 
-func flatten(element interface{}, context interface{}) interface{} {
+func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 	// 1)
 	nodeMap := make(map[string]interface{}, 0)
 	nodeMap["@default"] = make(map[string]interface{}, 0)
 	// 2)
-	//TODO make sure element is expanded
-	//TODO check "" works instead of nil
 	var idGenerator = BlankNodeIdGenerator{}
 	idGenerator.counter = 0
 	idGenerator.identifierMap = make(map[string]string, 0)
-	generateNodeMap(element, nodeMap, "@default", nil,
-		"", nil, &idGenerator)
+	defaultArg := "@default"
+	err := generateNodeMap(element, nodeMap, &defaultArg, nil,
+		nil, nil, &idGenerator)
+	if err != nil {
+		return nil, err
+	}
 	// 3)
 	defaultGraph := nodeMap["@default"].(map[string]interface{})
-	delete(nodeMap, "@default")
 	// 4)
 	for graphName := range nodeMap {
+		if graphName == "@default" {
+			continue
+		}
 		graph := nodeMap[graphName].(map[string]interface{})
 		// 4.1)
 		if _, hasGraph := defaultGraph[graphName]; !hasGraph {
@@ -54,43 +59,57 @@ func flatten(element interface{}, context interface{}) interface{} {
 		}
 	}
 	// 7)
-	if context == nil {
-		return flattened
+	if activeContext == nil {
+		return flattened, nil
 	}
 	// 8)
-	//TODO figure out how to pass options
-	activeContext := Context{}
-	//TODO check correct value of second argument to parse
-	activeContext.parse(context, nil)
-	compacted, _ := compact(&activeContext, "", flattened, false)
-	//TODO java version is different than spec
-	//TODO figure out what to do in step 8
-	//for now returns compacted
-	return compacted
+	//TODO make sure "" is ok to send as default value
+	compacted, compactErr := compact(activeContext, "", flattened,
+		activeContext.options.compactArrays)
+	if compactErr != nil {
+		return nil, compactErr
+	}
+	if _, isArray := compacted.([]interface{}); !isArray {
+		tmpArray := make([]interface{}, 0)
+		tmpArray = append(tmpArray, compacted)
+		compacted = tmpArray
+	}
+	graphArg := "@graph"
+	alias, compactErr := compactIri(activeContext, &graphArg, nil, false, false)
+	if compactErr != nil {
+		return nil, compactErr
+	}
+	returnValue, serializeErr := activeContext.serialize()
+	if serializeErr != nil {
+		return nil, serializeErr
+	}
+	returnValue[*alias] = compacted
+	return returnValue, nil
 }
 
 func generateNodeMap(element interface{}, nodeMap map[string]interface{},
-	activeGraph string, activeSubject interface{}, activeProperty string,
+	activeGraph *string, activeSubject interface{}, activeProperty *string,
 	list map[string]interface{}, idGenerator *BlankNodeIdGenerator) error {
 	// 1)
-	if _, isArray := element.([]interface{}); isArray {
+	if elementArray, isArray := element.([]interface{}); isArray {
 		// 1.1)
-		err := generateNodeMap(element, nodeMap, activeGraph, activeSubject,
-			activeProperty, list, idGenerator)
-		if err != nil {
-			return err
+		for _, item := range elementArray {
+			err := generateNodeMap(item, nodeMap, activeGraph, activeSubject,
+				activeProperty, list, idGenerator)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	// 2)
 	elementMap := element.(map[string]interface{})
 	// TODO check if needs to add map if activeGraph does not exist in nodeMap
-	if _, hasGraph := nodeMap[activeGraph]; !hasGraph {
-		nodeMap[activeGraph] = make(map[string]interface{}, 0)
+	if _, hasGraph := nodeMap[*activeGraph]; !hasGraph {
+		nodeMap[*activeGraph] = make(map[string]interface{}, 0)
 	}
-	graph := nodeMap[activeGraph].(map[string]interface{})
+	graph := nodeMap[*activeGraph].(map[string]interface{})
 	var node map[string]interface{}
-	//TODO handle activeSubject being a string
-	if activeSubject == nil || activeSubject.(string) == "" {
+	if activeSubject == nil {
 		node = nil
 	} else {
 		node = graph[activeSubject.(string)].(map[string]interface{})
@@ -124,7 +143,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 	if _, hasValue := elementMap["@value"]; hasValue {
 		// 4.1)
 		if list == nil {
-			mergeValue(node, activeProperty, elementMap)
+			mergeValue(node, *activeProperty, elementMap)
 			// 4.2)
 		} else {
 			mergeValue(list, "@list", elementMap)
@@ -138,7 +157,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		generateNodeMap(elementMap["@list"], nodeMap, activeGraph, activeSubject,
 			activeProperty, result, idGenerator)
 		// 5.3)
-		mergeValue(node, activeProperty, result)
+		mergeValue(node, *activeProperty, result)
 		// 6)
 	} else {
 		//6.1)
@@ -163,22 +182,21 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		}
 		// 6.4)
 		//TODO line asked by the spec but breaks various tests in java version
-		node := graph[id].(map[string]interface{})
+		// node := graph[id].(map[string]interface{})
 		// 6.5)
 		if _, isMap := activeSubject.(map[string]interface{}); isMap {
-			mergeValue(graph["@id"].(map[string]interface{}), activeProperty,
+			mergeValue(graph["@id"].(map[string]interface{}), *activeProperty,
 				activeSubject)
 			// 6.6)
-		} else if activeProperty != "" {
+		} else if activeProperty != nil {
 			// 6.6.1)
 			reference := make(map[string]interface{}, 0)
 			reference["@id"] = id
 			// 6.6.2)
 			if list == nil {
-				mergeValue(node, activeProperty, reference)
+				mergeValue(node, *activeProperty, reference)
 				// 6.6.3)
 			} else {
-				//TODO merge
 				//TODO code differs from spec. For now following Java code
 				mergeValue(list, "@list", reference)
 			}
@@ -199,10 +217,10 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 			if nodeIndexVal, hasNodeIndex := node["@index"]; hasNodeIndex {
 				if !deepCompare(nodeIndexVal, indexVal) {
 					return CONFLICTING_INDEXES
-				} else {
-					node["@index"] = indexVal
 				}
 			}
+			//TODO java version differs. Check spec is correct
+			node["@index"] = indexVal
 			delete(elementMap, "@index")
 		}
 		// 6.9)
@@ -219,7 +237,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 				for _, value := range values {
 					// 6.9.3.1.1)
 					err := generateNodeMap(value, nodeMap, activeGraph,
-						referencedNode, property, nil, idGenerator)
+						referencedNode, &property, nil, idGenerator)
 					if err != nil {
 						return err
 					}
@@ -230,8 +248,11 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		}
 		// 6.10)
 		if graphVal, hasGraph := elementMap["@graph"]; hasGraph {
-			generateNodeMap(graphVal, nodeMap, id, nil, "", nil,
+			err := generateNodeMap(graphVal, nodeMap, &id, nil, nil, nil,
 				idGenerator)
+			if err != nil {
+				return err
+			}
 			delete(elementMap, "@graph")
 		}
 		// 6.11
@@ -249,7 +270,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 				node[property] = tmpArray
 			}
 			// 6.11.3)
-			generateNodeMap(value, nodeMap, activeGraph, id, property,
+			generateNodeMap(value, nodeMap, activeGraph, id, &property,
 				nil, idGenerator)
 		}
 	}
@@ -257,7 +278,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 }
 
 type BlankNodeIdGenerator struct {
-	counter       int
+	counter       int64
 	identifierMap map[string]string
 }
 
@@ -269,7 +290,7 @@ func (g *BlankNodeIdGenerator) generateBlankNodeIdentifier(identifier *string) s
 		}
 	}
 	// 2)
-	newId := "_:b" + *identifier
+	newId := "_:b" + strconv.FormatInt(g.counter, 10)
 	// 3)
 	g.counter += 1
 	// 4)
