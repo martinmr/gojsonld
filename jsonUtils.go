@@ -11,7 +11,7 @@ func ReadJSONFromFile(path string) (interface{}, error) {
 		return nil, fileErr
 	}
 	var jsonData interface{}
-	jsonErr := json.Unmarshal(file, jsonData)
+	jsonErr := json.Unmarshal(file, &jsonData)
 	if jsonErr != nil {
 		return nil, jsonErr
 	}
