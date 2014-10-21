@@ -90,3 +90,31 @@ func TestExpand0011(t *testing.T) {
 func TestExpand0012(t *testing.T) {
 	testExpand("expand-0012-in.jsonld", "expand-0012-out.jsonld", t)
 }
+
+func TestExpand0013(t *testing.T) {
+	testExpand("expand-0013-in.jsonld", "expand-0013-out.jsonld", t)
+}
+
+func TestExpand0014(t *testing.T) {
+	testExpand("expand-0014-in.jsonld", "expand-0014-out.jsonld", t)
+}
+
+func TestExpand0015(t *testing.T) {
+	testExpand("expand-0015-in.jsonld", "expand-0015-out.jsonld", t)
+}
+
+func TestExpand0016(t *testing.T) {
+	testExpand("expand-0016-in.jsonld", "expand-0016-out.jsonld", t)
+}
+
+func TestExpand0017(t *testing.T) {
+	testExpand("expand-0017-in.jsonld", "expand-0017-out.jsonld", t)
+}
+
+func TestExpand0018(t *testing.T) {
+	testExpand("expand-0018-in.jsonld", "expand-0018-out.jsonld", t)
+}
+
+func TestExpand0019(t *testing.T) {
+	testExpand("expand-0019-in.jsonld", "expand-0019-out.jsonld", t)
+}
