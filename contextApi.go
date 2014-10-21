@@ -10,7 +10,6 @@ func parse(activeContext *Context, localContext interface{},
 		remoteContexts = make([]string, 0)
 	}
 	// 1)
-	//TODO write clone function
 	result := activeContext.clone()
 	// 2)
 	if _, isArray := localContext.([]interface{}); !isArray {
@@ -55,7 +54,7 @@ func parse(activeContext *Context, localContext interface{},
 			}
 			remoteContexts = append(remoteContexts, contextString)
 			// 3.2.3
-			rd, loadErr := activeContext.options.documentLoader.
+			rd, loadErr := activeContext.options.DocumentLoader.
 				loadDocument(contextString)
 			if loadErr != nil {
 				return nil, loadErr
@@ -170,7 +169,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 	// 4)
 	delete(activeContext.termDefinitions, term)
 	// 5)
-	var value interface{} = localContext[term]
+	var value interface{} = deepCopy(localContext[term])
 	// 6)
 	valueMap, isMap := value.(map[string]interface{})
 	if value == nil || (isMap && valueMap["@id"] == nil) {
@@ -305,7 +304,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 	// 16.1)
 	if container, hasContainer := valueMap["@container"]; hasContainer {
 		// 16.2)
-		if container != "@list" || container != "@set" || container != "@index" ||
+		if container != "@list" && container != "@set" && container != "@index" &&
 			container != "@language" {
 			return INVALID_CONTAINER_MAPPING
 		}
@@ -360,12 +359,13 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 	// 3)
 	td, hasTermDefinition := activeContext.termDefinitions[*value]
 	if vocab && hasTermDefinition {
-		tdMap := td.(map[string]interface{})
-		if tdMap != nil {
+		if !isNil(td) {
+			tdMap := td.(map[string]interface{})
 			returnValue := tdMap["@id"].(string)
 			return &returnValue, nil
+		} else {
+			return nil, nil
 		}
-		return nil, nil
 	}
 	// 4)
 	if colIndex := strings.Index(*value, ":"); colIndex >= 0 {

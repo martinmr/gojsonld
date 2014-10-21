@@ -7,15 +7,16 @@ import (
 func expand(activeContext *Context, activeProperty *string,
 	element interface{}) (interface{}, error) {
 	//1)
-	if element == nil {
+	if isNil(element) {
 		return nil, nil
 	}
 	// 2)
 	if isScalar(element) {
-		if activeProperty == nil || *activeProperty == "@graph" {
+		if isNil(activeProperty) || *activeProperty == "@graph" {
 			return nil, nil
 		}
-		return expandValue(activeContext, *activeProperty, element)
+		expandedValue, expandErr := expandValue(activeContext, *activeProperty, element)
+		return expandedValue, expandErr
 	}
 	// 3)
 	if elementArray, isArray := element.([]interface{}); isArray {
@@ -24,7 +25,7 @@ func expand(activeContext *Context, activeProperty *string,
 		for _, item := range elementArray {
 			// 3.2.1)
 			expandedItem, expandErr := expand(activeContext, activeProperty, item)
-			if expandErr != nil {
+			if !isNil(expandErr) {
 				return nil, expandErr
 			}
 			// 3.2.2)
@@ -36,10 +37,10 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 			// 3.2.3)
 			if isArray {
-				for _, expandedItem := range expandedArray {
-					result = append(result, expandedItem)
+				for _, item := range expandedArray {
+					result = append(result, item)
 				}
-			} else if expandedItem != nil {
+			} else if !isNil(expandedItem) {
 				result = append(result, expandedItem)
 			}
 		}
@@ -47,14 +48,12 @@ func expand(activeContext *Context, activeProperty *string,
 		return result, nil
 	}
 	// 4)
-	elementMap, isMap := element.(map[string]interface{})
-	if !isMap {
-		return nil, UNKNOWN_ERROR
-	}
+	elementMap := element.(map[string]interface{})
 	// 5)
 	if context, hasContext := elementMap["@context"]; hasContext {
-		processedContext, processErr := parse(activeContext, context, nil)
-		if processErr != nil {
+		emptyArray := make([]string, 0)
+		processedContext, processErr := parse(activeContext, context, emptyArray)
+		if !isNil(processErr) {
 			return nil, processErr
 		}
 		activeContext = processedContext
@@ -65,7 +64,7 @@ func expand(activeContext *Context, activeProperty *string,
 	keys := sortedKeys(elementMap)
 	for _, key := range keys {
 		value := elementMap[key]
-		var expandedValue interface{}
+
 		// 7.1)
 		if key == "@context" {
 			continue
@@ -73,19 +72,19 @@ func expand(activeContext *Context, activeProperty *string,
 		// 7.2)
 		expandedProperty, expandErr := expandIri(activeContext, &key,
 			false, true, nil, nil)
-		if expandErr != nil {
+		if !isNil(expandErr) {
 			return nil, expandErr
 		}
+		var expandedValue interface{} = nil
 		// 7.3)
-		//TODO check "" equals nil in expandedProperty == ""
-		if expandedProperty == nil || (!strings.Contains(*expandedProperty, ":") &&
-			!isKeyword(expandedProperty)) {
+		if isNil(expandedProperty) || (!strings.Contains(*expandedProperty, ":") &&
+			!isKeyword(*expandedProperty)) {
 			continue
 		}
 		//7.4)
 		if isKeyword(*expandedProperty) {
 			// 7.4.1)
-			if *activeProperty == "@reverse" {
+			if !isNil(activeProperty) && *activeProperty == "@reverse" {
 				return nil, INVALID_REVERSE_PROPERTY_MAP
 			}
 			// 7.4.2)
@@ -97,11 +96,9 @@ func expand(activeContext *Context, activeProperty *string,
 				*expandedProperty == "@id" {
 				return nil, INVALID_ID_VALUE
 			} else {
-				//TODO check passing nil values to expandIri does not break
-				// the code
 				tmpExpandedValue, expandedValueErr := expandIri(activeContext,
 					&valueString, true, false, nil, nil)
-				if expandedValueErr != nil {
+				if !isNil(expandedValueErr) {
 					return nil, expandedValueErr
 				}
 				expandedValue = *tmpExpandedValue
@@ -114,7 +111,7 @@ func expand(activeContext *Context, activeProperty *string,
 				if isString {
 					tmpExpandedValue, expandErr := expandIri(activeContext,
 						&valueString, true, true, nil, nil)
-					if expandErr != nil {
+					if !isNil(expandErr) {
 						return nil, expandErr
 					}
 					expandedValue = *tmpExpandedValue
@@ -123,7 +120,7 @@ func expand(activeContext *Context, activeProperty *string,
 					for _, item := range valueArray {
 						tmpExpandedValue, expandErr := expandIri(activeContext,
 							&item, true, true, nil, nil)
-						if expandErr != nil {
+						if !isNil(expandErr) {
 							return nil, expandErr
 						}
 						expandedArray = append(expandedArray, *tmpExpandedValue)
@@ -144,18 +141,18 @@ func expand(activeContext *Context, activeProperty *string,
 				graphArg := "@graph"
 				tmpExpandedValue, expandErr := expand(activeContext,
 					&graphArg, value)
-				if expandErr != nil {
+				if !isNil(expandErr) {
 					return nil, expandErr
 				}
 				expandedValue = tmpExpandedValue
 			}
 			// 7.4.6)
 			if *expandedProperty == "@value" {
-				if value != nil || !isScalar(value) {
+				if !(isNil(value) || isScalar(value)) {
 					return nil, INVALID_VALUE_OBJECT_VALUE
 				}
 				expandedValue = value
-				if value == nil {
+				if isNil(expandedValue) {
 					result["@value"] = nil
 					continue
 				}
@@ -177,16 +174,23 @@ func expand(activeContext *Context, activeProperty *string,
 			// 7.4.9)
 			if *expandedProperty == "@list" {
 				// 7.4.9.1)
-				if activeProperty == nil || *activeProperty == "@graph" {
+				if isNil(activeProperty) || *activeProperty == "@graph" {
 					continue
 				}
 				// 7.4.9.2)
 				tmpExpandedValue, expandErr := expand(activeContext, activeProperty,
 					value)
-				if expandErr != nil {
+				if !isNil(expandErr) {
 					return nil, expandErr
 				}
 				expandedValue = tmpExpandedValue
+				//TODO the step between 7.4.9.2 and 7.4.9.3 is not in the spec
+				//but it should definitely be.
+				if _, isArray := expandedValue.([]interface{}); !isArray {
+					tmpArray := make([]interface{}, 0)
+					tmpArray = append(tmpArray, expandedValue)
+					expandedValue = tmpArray
+				}
 				// 7.4.9.3)
 				if isListObject(expandedValue) {
 					return nil, LIST_OF_LISTS
@@ -196,7 +200,7 @@ func expand(activeContext *Context, activeProperty *string,
 			if *expandedProperty == "@set" {
 				tmpExpandedValue, expandErr := expand(activeContext, activeProperty,
 					value)
-				if expandErr != nil {
+				if !isNil(expandErr) {
 					return nil, expandErr
 				}
 				expandedValue = tmpExpandedValue
@@ -210,7 +214,7 @@ func expand(activeContext *Context, activeProperty *string,
 				reverseArg := "@reverse"
 				tmpExpandedValue, expandErr := expand(activeContext, &reverseArg,
 					value)
-				if expandErr != nil {
+				if !isNil(expandErr) {
 					return nil, expandErr
 				}
 				expandedValue = tmpExpandedValue
@@ -225,9 +229,15 @@ func expand(activeContext *Context, activeProperty *string,
 							result[property] = make([]interface{}, 0)
 						}
 						// 7.4.11.2.1)
-						//TODO check if needs to handle lists differently
 						resultArray := result[property].([]interface{})
-						result[property] = append(resultArray, item)
+						if itemArray, isArray := item.([]interface{}); isArray {
+							for _, subItem := range itemArray {
+								resultArray = append(resultArray, subItem)
+							}
+						} else {
+							resultArray = append(resultArray, item)
+						}
+						result[property] = resultArray
 					}
 				}
 				// 7.4.11.3)
@@ -270,7 +280,7 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 			//TODO java code differs from spec here
 			// 7.4.12)
-			if expandedValue != nil {
+			if !isNil(expandedValue) {
 				result[*expandedProperty] = expandedValue
 			}
 			// 7.4.13)
@@ -322,7 +332,7 @@ func expand(activeContext *Context, activeProperty *string,
 				}
 				// 7.6.2.2)
 				tmpIndexValue, expandErr := expand(activeContext, &key, indexValue)
-				if expandErr != nil {
+				if !isNil(expandErr) {
 					return nil, expandErr
 				}
 				indexValue = tmpIndexValue
@@ -340,14 +350,14 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 		} else {
 			// 7.7)
-			tmpExpandedValue, tmpErr := expand(activeContext, &key, value)
-			if tmpErr != nil {
+			tmpExpandedValue, expandErr := expand(activeContext, &key, value)
+			if !isNil(expandErr) {
 				return nil, expandErr
 			}
 			expandedValue = tmpExpandedValue
 		}
 		// 7.8)
-		if expandedValue == nil {
+		if isNil(expandedValue) {
 			continue
 		}
 		// 7.9)
@@ -361,8 +371,9 @@ func expand(activeContext *Context, activeProperty *string,
 			tmpMap := make(map[string]interface{}, 0)
 			tmpMap["@list"] = expandedValue
 			expandedValue = tmpMap
-			// 7.10)
-		} else if activeContext.isReverseProperty(key) {
+		}
+		//7.10)
+		if activeContext.isReverseProperty(key) {
 			// 7.10.1)
 			if _, hasReverse := result["@reverse"]; !hasReverse {
 				result["@reverse"] = make(map[string]interface{})
@@ -388,30 +399,42 @@ func expand(activeContext *Context, activeProperty *string,
 					reverseMap[*expandedProperty] = make([]interface{}, 0)
 				}
 				// 7.10.4.3)
-				//TODO check if list needs to be handled different
-				reverseMap[*expandedProperty] = append(
-					reverseMap[*expandedProperty].([]interface{}), item)
+				reverseArray := reverseMap[*expandedProperty].([]interface{})
+				if itemArray, isArray := item.([]interface{}); isArray {
+					for _, subItem := range itemArray {
+						reverseArray = append(reverseArray, subItem)
+					}
+				} else {
+					reverseArray = append(reverseArray, item)
+				}
+				reverseMap[*expandedProperty] = reverseArray
 			}
-		} else if !activeContext.isReverseProperty(key) {
 			// 7.11)
+		} else {
 			// 7.11.1)
 			if _, hasProperty := result[*expandedProperty]; !hasProperty {
 				result[*expandedProperty] = make([]interface{}, 0)
 			}
 			// 7.11.2
-			//TODO check if need to handle lists differently
-			result[*expandedProperty] = append(result[*expandedProperty].([]interface{}),
-				expandedValue)
+			resultArray := result[*expandedProperty].([]interface{})
+			if expandedArray, isArray := expandedValue.([]interface{}); isArray {
+				for _, item := range expandedArray {
+					resultArray = append(resultArray, item)
+				}
+			} else {
+				resultArray = append(resultArray, expandedValue)
+			}
+			result[*expandedProperty] = resultArray
 		}
 	}
 	// 8)
 	if value, hasValue := result["@value"]; hasValue {
 		//8.1)
-		if !isValidValueObject(value) {
+		if !isValidValueObject(result) {
 			return nil, INVALID_VALUE_OBJECT
 		}
 		// 8.2)
-		if value == nil {
+		if isNil(value) {
 			result = nil
 			// 8.3)
 		} else if _, isValueString := value.(string); !isValueString {
@@ -465,14 +488,14 @@ func expand(activeContext *Context, activeProperty *string,
 		result = nil
 	}
 	// 12)
-	if activeProperty == nil || *activeProperty == "@graph" {
+	if isNil(activeProperty) || *activeProperty == "@graph" {
 		// 12.1)
 		_, hasValue := result["@value"]
 		_, hasList := result["@list"]
 		_, hasID := result["@id"]
-		if result != nil && (len(result) == 0 || hasList || hasValue) {
+		if !isNil(result) && (len(result) == 0 || hasList || hasValue) {
 			result = nil
-		} else if result != nil && len(result) == 1 && hasID {
+		} else if !isNil(result) && len(result) == 1 && hasID {
 			// 12.2)
 			result = nil
 		}
@@ -491,7 +514,7 @@ func expandValue(activeContext *Context, activeProperty string,
 		valueString := value.(string)
 		expandedValue, expandErr := expandIri(activeContext, &valueString,
 			true, false, nil, nil)
-		if expandErr == nil {
+		if isNil(expandErr) {
 			result["@id"] = *expandedValue
 			return result, nil
 		} else {
@@ -503,7 +526,7 @@ func expandValue(activeContext *Context, activeProperty string,
 		valueString := value.(string)
 		expandedValue, expandErr := expandIri(activeContext, &valueString,
 			true, true, nil, nil)
-		if expandErr == nil {
+		if isNil(expandErr) {
 			result["@id"] = *expandedValue
 			return result, nil
 		} else {
@@ -518,7 +541,7 @@ func expandValue(activeContext *Context, activeProperty string,
 	} else if _, isString := value.(string); isString {
 		// 5.1)
 		if language, hasLanguage := termDefinitions["@language"]; hasLanguage {
-			if language != nil {
+			if !isNil(language) {
 				result["@language"] = language
 			}
 			// 5.2)
