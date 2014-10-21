@@ -172,7 +172,8 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 	var value interface{} = deepCopy(localContext[term])
 	// 6)
 	valueMap, isMap := value.(map[string]interface{})
-	if value == nil || (isMap && valueMap["@id"] == nil) {
+	idValue, hasId := valueMap["@id"]
+	if isNil(value) || (isMap && hasId && isNil(idValue)) {
 		activeContext.termDefinitions[term] = nil
 		defined[term] = true
 		return nil
@@ -183,10 +184,9 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 		tmpMap["@id"] = value
 		value = tmpMap
 		// 8
-	} else {
-		if _, isMap := value.(map[string]interface{}); !isMap {
-			return INVALID_TERM_DEFINITION
-		}
+	}
+	if _, isMap := value.(map[string]interface{}); !isMap {
+		return INVALID_TERM_DEFINITION
 	}
 	//Redifine valueMap
 	valueMap = value.(map[string]interface{})
@@ -207,7 +207,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 		} else {
 			return expandErr
 		}
-		if typeString != "@id" || typeString != "@vocab" ||
+		if typeString != "@id" && typeString != "@vocab" &&
 			!isAbsoluteIri(typeString) {
 			return INVALID_TYPE_MAPPING
 		}
@@ -336,7 +336,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 	localContext map[string]interface{}, defined map[string]bool) (*string, error) {
 	//1)
-	if isKeyword(*value) || value == nil {
+	if isKeyword(*value) || isNil(value) {
 		if value == nil {
 			return nil, nil
 		}

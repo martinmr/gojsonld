@@ -64,7 +64,6 @@ func expand(activeContext *Context, activeProperty *string,
 	keys := sortedKeys(elementMap)
 	for _, key := range keys {
 		value := elementMap[key]
-
 		// 7.1)
 		if key == "@context" {
 			continue
@@ -506,11 +505,12 @@ func expand(activeContext *Context, activeProperty *string,
 
 func expandValue(activeContext *Context, activeProperty string,
 	value interface{}) (interface{}, error) {
-	// 1)
 	result := make(map[string]interface{})
-	termDefinitions := activeContext.termDefinitions
-	typeValue, hasType := termDefinitions["@type"]
-	if hasType && typeValue == "@id" {
+	termDefinition, hasDefinition := activeContext.termDefinitions[activeProperty]
+	termMap, _ := termDefinition.(map[string]interface{})
+	typeValue, hasType := termMap["@type"]
+	// 1)
+	if hasDefinition && hasType && typeValue == "@id" {
 		valueString := value.(string)
 		expandedValue, expandErr := expandIri(activeContext, &valueString,
 			true, false, nil, nil)
@@ -522,7 +522,7 @@ func expandValue(activeContext *Context, activeProperty string,
 		}
 	}
 	// 2)
-	if hasType && typeValue == "@vocab" {
+	if hasDefinition && hasType && typeValue == "@vocab" {
 		valueString := value.(string)
 		expandedValue, expandErr := expandIri(activeContext, &valueString,
 			true, true, nil, nil)
@@ -536,17 +536,18 @@ func expandValue(activeContext *Context, activeProperty string,
 	// 3)
 	result["@value"] = value
 	// 4)
-	if hasType {
+	if hasDefinition && hasType {
 		result["@type"] = typeValue
 	} else if _, isString := value.(string); isString {
 		// 5.1)
-		if language, hasLanguage := termDefinitions["@language"]; hasLanguage {
+		language, hasLanguage := termMap["@language"]
+		if hasDefinition && hasLanguage {
 			if !isNil(language) {
 				result["@language"] = language
 			}
 			// 5.2)
-		} else if defaultLanguage, hasDefaultLanguage := activeContext.table["language"]; hasDefaultLanguage {
-			result["@language"] = defaultLanguage
+		} else if language, hasLanguage := activeContext.table["language"]; hasLanguage {
+			result["@language"] = language
 		}
 	}
 	// 6)
