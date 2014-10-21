@@ -65,7 +65,7 @@ func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 	// 8)
 	//TODO make sure "" is ok to send as default value
 	compacted, compactErr := compact(activeContext, "", flattened,
-		activeContext.options.compactArrays)
+		activeContext.options.CompactArrays)
 	if compactErr != nil {
 		return nil, compactErr
 	}
