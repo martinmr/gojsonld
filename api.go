@@ -8,20 +8,20 @@ type API struct {
 	Options *Options
 }
 
-func (api *API) Expand(input interface{}, context interface{}) ([]interface{}, error) {
+func (api *API) Expand(input interface{}) ([]interface{}, error) {
 	// 1)
 	//TODO implement API with promises
 	// 2)
 	//TODO handle remote context
 	inputString, isString := input.(string)
 	if isString && strings.Contains(inputString, ":") {
-		remoteDocument, remoteErr := api.Options.documentLoader.
+		remoteDocument, remoteErr := api.Options.DocumentLoader.
 			loadDocument(inputString)
 		if remoteErr != nil {
 			return nil, LOADING_DOCUMENT_FAILED
 		}
-		if api.Options.base == "" {
-			api.Options.base = inputString
+		if api.Options.Base == "" {
+			api.Options.Base = inputString
 		}
 		input = remoteDocument.document
 	}
@@ -29,9 +29,8 @@ func (api *API) Expand(input interface{}, context interface{}) ([]interface{}, e
 	activeContext := Context{}
 	activeContext.init(api.Options)
 	// 4)
-	if api.Options.expandContext != nil {
+	if api.Options.ExpandContext != nil {
 		var expandContext interface{}
-		expandContext = api.Options.expandContext
 		mapContext, hasContext := expandContext.(map[string]interface{})["@context"]
 		if hasContext {
 			expandContext = mapContext
@@ -55,12 +54,15 @@ func (api *API) Expand(input interface{}, context interface{}) ([]interface{}, e
 	graphVal, hasGraph := expandedMap["@graph"]
 	if isMap && hasGraph && len(expandedMap) == 1 {
 		expanded = graphVal
+	} else if isMap && len(expandedMap) == 0 {
+		expanded = make([]interface{}, 0)
+		return expanded.([]interface{}), nil
 	} else if expanded == nil {
 		expanded = make([]interface{}, 0)
 	}
-	if _, isArray := expanded.([]interface{}); isArray {
+	if _, isArray := expanded.([]interface{}); !isArray {
 		tmpArray := make([]interface{}, 0)
-		tmpArray = append(tmpArray, expand)
+		tmpArray = append(tmpArray, expanded)
 		expanded = tmpArray
 	}
 	// 7)
