@@ -41,10 +41,13 @@ func isKeyword(key interface{}) bool {
 
 func isScalar(value interface{}) bool {
 	_, isString := value.(string)
-	//TODO verify this check is correct
-	_, isNumber := value.(float64)
+	_, isFloat64 := value.(float64)
+	_, isFloat32 := value.(float32)
+	_, isInt64 := value.(int64)
+	_, isInt32 := value.(int32)
 	_, isBoolean := value.(bool)
-	if isString || isNumber || isBoolean {
+	if isString || isFloat32 || isFloat64 || isInt32 ||
+		isInt64 || isBoolean {
 		return true
 	}
 	return false
@@ -68,8 +71,8 @@ func isValidValueObject(value interface{}) bool {
 		return false
 	}
 	for key := range valueMap {
-		if key != "@value" || key != "@language" ||
-			key != "@type" || key != "@index" {
+		if key != "@value" && key != "@language" &&
+			key != "@type" && key != "@index" {
 			return false
 		}
 	}
@@ -90,6 +93,19 @@ func isListObject(value interface{}) bool {
 	return false
 }
 
+func isNil(value interface{}) bool {
+	switch value.(type) {
+	case string, int64, int32, float64, float32, bool:
+		return false
+	}
+
+	if value == nil || reflect.ValueOf(value).IsNil() {
+		return true
+	} else {
+		return false
+	}
+}
+
 func deepCompareMatters(v1, v2 interface{}, listOrderMatters bool) bool {
 	return reflect.DeepEqual(v1, v2)
 }
@@ -105,6 +121,27 @@ func deepContains(values []interface{}, value interface{}) bool {
 		}
 	}
 	return false
+}
+
+func deepCopy(value interface{}) interface{} {
+	switch v := value.(type) {
+	case string, int64, int32, float64, float32:
+		valueCopy := v
+		return valueCopy
+	case []interface{}:
+		tmpArray := make([]interface{}, 0)
+		for _, item := range v {
+			tmpArray = append(tmpArray, deepCopy(item))
+		}
+		return tmpArray
+	case map[string]interface{}:
+		tmpMap := make(map[string]interface{}, 0)
+		for key, item := range v {
+			tmpMap[key] = deepCopy(item)
+		}
+		return tmpMap
+	}
+	return nil
 }
 
 func mergeValue(obj map[string]interface{}, key string, value interface{}) {

@@ -32,52 +32,14 @@ type Context struct {
 
 func (c *Context) init(options *Options) {
 	c.options = options
-	if len(options.base) > 0 {
-		c.table["@base"] = options.base
+	c.termDefinitions = make(map[string]interface{}, 0)
+	c.table = make(map[string]interface{}, 0)
+	if len(options.Base) > 0 {
+		c.table["@base"] = options.Base
+	} else {
+		c.table["@base"] = ""
 	}
-	c.termDefinitions = make(map[string]interface{})
 }
-
-// /**
-//  * Return a map of potential RDF prefixes based on the JSON-LD Term
-//  * Definitions in this context.
-//  * <p>
-//  * No guarantees of the prefixes are given, beyond that it will not contain
-//  * ":".
-//  *
-//  * @param onlyCommonPrefixes
-//  *            If <code>true</code>, the result will not include
-//  *            "not so useful" prefixes, such as "term1":
-//  *            "http://example.com/term1", e.g. all IRIs will end with "/" or
-//  *            "#". If <code>false</code>, all potential prefixes are
-//  *            returned.
-//  *
-//  * @return A map from prefix string to IRI string
-//  */
-// public Map<String, String> getPrefixes(boolean onlyCommonPrefixes) {
-//     final Map<String, String> prefixes = new LinkedHashMap<String, String>();
-//     for (final String term : termDefinitions.keySet()) {
-//         if (term.contains(":")) {
-//             continue;
-//         }
-//         final Map<String, Object> termDefinition = (Map<String, Object>) termDefinitions
-//                 .get(term);
-//         if (termDefinition == null) {
-//             continue;
-//         }
-//         final String id = (String) termDefinition.get("@id");
-//         if (id == null) {
-//             continue;
-//         }
-//         if (term.startsWith("@") || id.startsWith("@")) {
-//             continue;
-//         }
-//         if (!onlyCommonPrefixes || id.endsWith("/") || id.endsWith("#")) {
-//             prefixes.put(term, id);
-//         }
-//     }
-//     return prefixes;
-// }
 
 // String compactIri(String iri, boolean relativeToVocab) {
 //     return compactIri(iri, null, relativeToVocab, false);
@@ -89,6 +51,18 @@ func (c *Context) init(options *Options) {
 
 func (c *Context) clone() *Context {
 	var clonedContext *Context = new(Context)
+	clonedContext.table = make(map[string]interface{}, 0)
+	for key, value := range c.table {
+		clonedContext.table[key] = deepCopy(value)
+	}
+	clonedContext.inverse = make(map[string]interface{}, 0)
+	for key, value := range c.inverse {
+		clonedContext.inverse[key] = deepCopy(value)
+	}
+	clonedContext.termDefinitions = make(map[string]interface{}, 0)
+	for key, value := range c.termDefinitions {
+		clonedContext.termDefinitions[key] = deepCopy(value)
+	}
 	return clonedContext
 }
 
@@ -99,9 +73,13 @@ func (c *Context) getContainer(property string) string {
 	if isKeyword(property) {
 		return property
 	}
-	td := c.termDefinitions[property]
-	if tdMap, ok := td.(map[string]interface{}); ok {
-		return tdMap["@container"].(string)
+	td, hasTermDefinition := c.termDefinitions[property]
+	if !hasTermDefinition {
+		return ""
+	}
+	container, hasContainer := td.(map[string]interface{})["@container"]
+	if hasContainer {
+		return container.(string)
 	} else {
 		return ""
 	}
@@ -192,7 +170,7 @@ func (c *Context) getTermDefinition(key string) (map[string]interface{}, bool) {
 
 func (c *Context) serialize() (map[string]interface{}, error) {
 	context := make(map[string]interface{})
-	if base, hasBase := c.table["@base"]; hasBase && base != c.options.base {
+	if base, hasBase := c.table["@base"]; hasBase && base != c.options.Base {
 		context["@base"] = base
 	}
 	if language, hasLanguage := c.table["@language"]; hasLanguage {
