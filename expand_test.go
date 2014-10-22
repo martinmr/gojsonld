@@ -26,14 +26,13 @@ func testExpand(inputFile, outputFile, contextFile, base string, t *testing.T) {
 	} else {
 		expandContext = contextJson
 	}
-	api := API{}
-	api.Options = &Options{
+	options := &Options{
 		Base:           base,
 		CompactArrays:  true,
 		ExpandContext:  expandContext,
 		DocumentLoader: NewDocumentLoader(),
 	}
-	expandedJson, expandErr := api.Expand(inputJson)
+	expandedJson, expandErr := Expand(inputJson, options)
 	if expandErr != nil {
 		t.Error("Expansion failed with error ", expandErr.Error())
 		return

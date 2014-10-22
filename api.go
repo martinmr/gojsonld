@@ -4,41 +4,37 @@ import (
 	"strings"
 )
 
-type API struct {
-	Options *Options
-}
-
-func (api *API) Expand(input interface{}) ([]interface{}, error) {
+func Expand(input interface{}, options *Options) ([]interface{}, error) {
 	// 1)
 	//TODO implement API with promises
 	// 2)
 	//TODO handle remote context
 	inputString, isString := input.(string)
 	if isString && strings.Contains(inputString, ":") {
-		remoteDocument, remoteErr := api.Options.DocumentLoader.
+		remoteDocument, remoteErr := options.DocumentLoader.
 			loadDocument(inputString)
 		if remoteErr != nil {
 			return nil, LOADING_DOCUMENT_FAILED
 		}
-		if api.Options.Base == "" {
-			api.Options.Base = inputString
+		if options.Base == "" {
+			options.Base = inputString
 		}
 		input = remoteDocument.document
 	}
 	// 3)
 	activeContext := Context{}
-	activeContext.init(api.Options)
+	activeContext.init(options)
 	// 4)
-	if api.Options.ExpandContext != nil {
+	if options.ExpandContext != nil {
 		var expandContext interface{}
 		mapContext,
-			hasContext := api.Options.ExpandContext.(map[string]interface{})["@context"]
+			hasContext := options.ExpandContext.(map[string]interface{})["@context"]
 		if hasContext {
 			expandContext = mapContext
 		}
 		emptyArray := make([]string, 0)
 		tmpContext, parseErr := parse(&activeContext, expandContext, emptyArray)
-		if parseErr != nil {
+		if !isNil(parseErr) {
 			return nil, parseErr
 		}
 		activeContext = *tmpContext
@@ -65,4 +61,62 @@ func (api *API) Expand(input interface{}) ([]interface{}, error) {
 	}
 	// 7)
 	return expanded.([]interface{}), nil
+}
+
+func Compact(input interface{}, context interface{},
+	options *Options) (map[string]interface{}, error) {
+	// 1)
+	// TODO use promises
+	// 2)
+	expanded, expandErr := Expand(input, options)
+	if !isNil(expandErr) {
+		return nil, expandErr
+	}
+	//7)
+	contextMap, isMap := context.(map[string]interface{})
+	contextValue, hasContext := contextMap["@context"]
+	if isMap && hasContext {
+		context = contextValue
+	}
+	activeContext := Context{}
+	activeContext.init(options)
+	emptyArray := make([]string, 0)
+	tmpContext, parseErr := parse(&activeContext, context, emptyArray)
+	if !isNil(parseErr) {
+		return nil, parseErr
+	}
+	activeContext = *tmpContext
+	//8)
+	//TODO check passing "" works
+	compacted, compactErr := compact(&activeContext, "", expanded,
+		options.CompactArrays)
+	if !isNil(compactErr) {
+		return nil, compactErr
+	}
+	//final step of Compaction algorithm
+	compactedArray, isArray := compacted.([]interface{})
+	if isArray {
+		if len(compactedArray) == 0 {
+			compacted = make(map[string]interface{}, 0)
+		} else {
+			graphArg := "@graph"
+			iri, compactErr := compactIri(&activeContext, &graphArg, nil,
+				true, false)
+			if !isNil(compactErr) {
+				return nil, compactErr
+			}
+			tmpMap := make(map[string]interface{}, 0)
+			tmpMap[*iri] = compacted
+			compacted = tmpMap
+		}
+	}
+	if !isNil(compacted) && !isNil(context) {
+		contextMap, isMap := context.(map[string]interface{})
+		contextArray, isArray := context.([]interface{})
+		if (isMap && len(contextMap) > 0) || (isArray && len(contextArray) > 0) {
+			compacted.(map[string]interface{})["@context"] = context
+		}
+	}
+	//9
+	return compacted.(map[string]interface{}), nil
 }
