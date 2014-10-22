@@ -31,7 +31,8 @@ func (api *API) Expand(input interface{}) ([]interface{}, error) {
 	// 4)
 	if api.Options.ExpandContext != nil {
 		var expandContext interface{}
-		mapContext, hasContext := expandContext.(map[string]interface{})["@context"]
+		mapContext,
+			hasContext := api.Options.ExpandContext.(map[string]interface{})["@context"]
 		if hasContext {
 			expandContext = mapContext
 		}
@@ -54,10 +55,7 @@ func (api *API) Expand(input interface{}) ([]interface{}, error) {
 	graphVal, hasGraph := expandedMap["@graph"]
 	if isMap && hasGraph && len(expandedMap) == 1 {
 		expanded = graphVal
-	} else if isMap && len(expandedMap) == 0 {
-		expanded = make([]interface{}, 0)
-		return expanded.([]interface{}), nil
-	} else if expanded == nil {
+	} else if isNil(expanded) {
 		expanded = make([]interface{}, 0)
 	}
 	if _, isArray := expanded.([]interface{}); !isArray {
