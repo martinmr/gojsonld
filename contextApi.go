@@ -6,7 +6,7 @@ import (
 
 func parse(activeContext *Context, localContext interface{},
 	remoteContexts []string) (*Context, error) {
-	if remoteContexts == nil {
+	if isNil(remoteContexts) {
 		remoteContexts = make([]string, 0)
 	}
 	// 1)
@@ -26,7 +26,7 @@ func parse(activeContext *Context, localContext interface{},
 		//being processed context), if available; otherwise
 		//to null. If set, the base option of a JSON-LD API
 		//Implementation overrides the base IRI.
-		if context == nil {
+		if isNil(context) {
 			newContext := new(Context)
 			newContext.init(activeContext.options)
 			result = newContext
@@ -36,11 +36,11 @@ func parse(activeContext *Context, localContext interface{},
 		if contextString, isString := context.(string); isString {
 			// 3.2.1)
 			uri := result.table["@base"].(string)
-			absoluteUri, resolveErr := resolve(uri, contextString)
-			if resolveErr != nil {
+			absoluteUri, resolveErr := resolve(&uri, &contextString)
+			if !isNil(resolveErr) {
 				return nil, resolveErr
 			}
-			uri = absoluteUri
+			uri = *absoluteUri
 			// 3.2.2
 			isRecursive := false
 			for _, remoteContext := range remoteContexts {
@@ -56,7 +56,7 @@ func parse(activeContext *Context, localContext interface{},
 			// 3.2.3
 			rd, loadErr := activeContext.options.DocumentLoader.
 				loadDocument(contextString)
-			if loadErr != nil {
+			if !isNil(loadErr) {
 				return nil, loadErr
 			}
 			var remoteContext interface{} = rd.document
@@ -70,7 +70,7 @@ func parse(activeContext *Context, localContext interface{},
 			context = remoteContextMap["@context"]
 			// 3.2.4)
 			recursiveResult, parseErr := parse(result, context, remoteContexts)
-			if parseErr == nil {
+			if isNil(parseErr) {
 				result = recursiveResult
 			} else {
 				return nil, parseErr
@@ -88,7 +88,7 @@ func parse(activeContext *Context, localContext interface{},
 		value, hasBase := contextMap["@base"]
 		if len(remoteContexts) == 0 && hasBase {
 			// 3.4.2)
-			if value == nil {
+			if isNil(value) {
 				delete(result.table, "@base")
 			} else if valueString, isString := value.(string); isString {
 				//TODO check isAbsoluteIri
@@ -114,7 +114,7 @@ func parse(activeContext *Context, localContext interface{},
 		value, hasVocab := contextMap["@vocab"]
 		if hasVocab {
 			// 3.5.2)
-			if value == nil {
+			if isNil(value) {
 				delete(result.table, "@vocab")
 			} else if valueString, isString := value.(string); isString {
 				// 3.5.3)
@@ -131,7 +131,7 @@ func parse(activeContext *Context, localContext interface{},
 		// 3.6.1)
 		value, hasLanguage := contextMap["@language"]
 		if hasLanguage {
-			if value == nil {
+			if isNil(value) {
 				delete(result.table, "@language")
 			} else if valueString, isString := value.(string); isString {
 				result.table["@language"] = strings.ToLower(valueString)
@@ -145,7 +145,10 @@ func parse(activeContext *Context, localContext interface{},
 			if key == "@base" || key == "@vocab" || key == "@language" {
 				continue
 			}
-			createTermDefinition(result, contextMap, key, defined)
+			termErr := createTermDefinition(result, contextMap, key, defined)
+			if !isNil(termErr) {
+				return nil, termErr
+			}
 		}
 	}
 	return result, nil
@@ -202,7 +205,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 		// 10.2)
 		expandedType, expandErr := expandIri(activeContext, &typeString, false,
 			true, localContext, defined)
-		if expandErr == nil {
+		if isNil(expandErr) {
 			typeString = *expandedType
 		} else {
 			return expandErr
@@ -228,18 +231,18 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 		// 11.3)
 		expandedReverse, expandErr := expandIri(activeContext, &reverseString,
 			false, true, localContext, defined)
-		if expandErr == nil {
+		if isNil(expandErr) {
 			reverseString = *expandedReverse
 		} else {
 			return expandErr
 		}
-		if !isAbsoluteIri(reverseString) || !isBlankNodeIdentifier(reverseString) {
+		if !isAbsoluteIri(reverseString) && !isBlankNodeIdentifier(reverseString) {
 			return INVALID_IRI_MAPPING
 		}
 		definition["@id"] = reverseString
 		// 11.4)
 		if container, hasContainer := valueMap["@container"]; hasContainer {
-			if container != "@set" || container != "@index" || container != nil {
+			if container != "@set" && container != "@index" && !isNil(container) {
 				return INVALID_REVERSE_PROPERTY
 			}
 			definition["@container"] = container
@@ -262,7 +265,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 		// 13.2)
 		expandedID, expandErr := expandIri(activeContext, &idString, false,
 			true, localContext, defined)
-		if expandErr == nil {
+		if isNil(expandErr) {
 			idString = *expandedID
 		} else {
 			return expandErr
@@ -317,7 +320,7 @@ func createTermDefinition(activeContext *Context, localContext map[string]interf
 	if containsLanguage && !containsType {
 		// 17.1)
 		languageString, isString := language.(string)
-		if !isString || language != nil {
+		if !isString && !isNil(language) {
 			return INVALID_LANGUAGE_MAPPING
 		}
 		// 17.2)
@@ -337,7 +340,7 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 	localContext map[string]interface{}, defined map[string]bool) (*string, error) {
 	//1)
 	if isKeyword(*value) || isNil(value) {
-		if value == nil {
+		if isNil(value) {
 			return nil, nil
 		}
 		returnValue := *value
@@ -349,10 +352,10 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 	//same thing as in step 4.3
 	_, hasValue := localContext[*value]
 	definedValue := defined[*value]
-	if localContext != nil && hasValue && definedValue == false {
+	if !isNil(localContext) && hasValue && definedValue == false {
 		createErr := createTermDefinition(activeContext, localContext,
 			*value, defined)
-		if createErr != nil {
+		if !isNil(createErr) {
 			return nil, createErr
 		}
 	}
@@ -383,7 +386,7 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 		if containsPrefix && (!inDefined || definedPrefix == false) {
 			createErr := createTermDefinition(activeContext, localContext,
 				prefix, defined)
-			if createErr != nil {
+			if !isNil(createErr) {
 				return nil, createErr
 			}
 		}
@@ -405,12 +408,19 @@ func expandIri(activeContext *Context, value *string, relative bool, vocab bool,
 		return &returnValue, nil
 	} else if relative {
 		// 6)
-		absoluteUri, resolveErr := resolve(activeContext.table["@base"].(string),
-			*value)
-		if resolveErr != nil {
+		base, isString := activeContext.table["@base"].(string)
+		var baseArg *string
+		if isString {
+			baseArg = &base
+		} else {
+			baseArg = nil
+		}
+		absoluteUri, resolveErr := resolve(baseArg,
+			value)
+		if !isNil(resolveErr) {
 			return nil, resolveErr
 		}
-		return &absoluteUri, nil
+		return absoluteUri, nil
 	}
 	// 7)
 	returnValue := *value

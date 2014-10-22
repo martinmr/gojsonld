@@ -30,9 +30,9 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 			// 3.2.2)
 			expandedArray, isArray := expandedItem.([]interface{})
-			if (*activeProperty == "@list" ||
+			if !isNil(activeProperty) && ((*activeProperty == "@list" ||
 				activeContext.getContainer(*activeProperty) == "@list") &&
-				(isArray || isListObject(expandedItem)) {
+				(isArray || isListObject(expandedItem))) {
 				return nil, LIST_OF_LISTS
 			}
 			// 3.2.3)
@@ -104,7 +104,7 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 			// 7.4.4)
 			valueString, isString := value.(string)
-			valueArray, isArray := value.([]string)
+			valueArray, isArray := value.([]interface{})
 			valueMap, isMap := value.(map[string]interface{})
 			if *expandedProperty == "@type" {
 				if isString {
@@ -115,10 +115,11 @@ func expand(activeContext *Context, activeProperty *string,
 					}
 					expandedValue = *tmpExpandedValue
 				} else if isArray {
-					expandedArray := make([]string, 0)
+					expandedArray := make([]interface{}, 0)
 					for _, item := range valueArray {
+						itemString := item.(string)
 						tmpExpandedValue, expandErr := expandIri(activeContext,
-							&item, true, true, nil, nil)
+							&itemString, true, true, nil, nil)
 						if !isNil(expandErr) {
 							return nil, expandErr
 						}
@@ -219,9 +220,9 @@ func expand(activeContext *Context, activeProperty *string,
 				expandedValue = tmpExpandedValue
 				// 7.4.11.2)
 				expandedValueMap := expandedValue.(map[string]interface{})
-				reverse, hasReserve := expandedValueMap["@reverse"]
+				reverse, hasReverse := expandedValueMap["@reverse"]
 				reverseMap, isReverseMap := reverse.(map[string]interface{})
-				if hasReserve && isReverseMap {
+				if hasReverse && isReverseMap {
 					for property, item := range reverseMap {
 						// 7.4.11.2.1)
 						if _, hasProperty := result[property]; !hasProperty {
@@ -240,9 +241,10 @@ func expand(activeContext *Context, activeProperty *string,
 					}
 				}
 				// 7.4.11.3)
-				if hasReserve && len(expandedValueMap) > 1 {
+				if (!hasReverse && len(expandedValueMap) > 0) ||
+					(hasReverse && len(expandedValueMap) > 1) {
 					// 7.4.11.3.1)
-					if _, hasReserve := result["@reverse"]; !hasReserve {
+					if _, hasReverse := result["@reverse"]; !hasReverse {
 						result["@reverse"] = make(map[string]interface{})
 					}
 					// 7.4.11.3.2)
@@ -442,7 +444,6 @@ func expand(activeContext *Context, activeProperty *string,
 			}
 		} else if typeVal, hasType := result["@type"]; hasType {
 			// 8.4)
-			//TODO complete isIRI method
 			if !isIRI(typeVal) {
 				return nil, INVALID_TYPED_VALUE
 			}
@@ -541,13 +542,14 @@ func expandValue(activeContext *Context, activeProperty string,
 	} else if _, isString := value.(string); isString {
 		// 5.1)
 		language, hasLanguage := termMap["@language"]
+		defaultLanguage, hasDefaultLanguage := activeContext.table["@language"]
 		if hasDefinition && hasLanguage {
 			if !isNil(language) {
 				result["@language"] = language
 			}
 			// 5.2)
-		} else if language, hasLanguage := activeContext.table["language"]; hasLanguage {
-			result["@language"] = language
+		} else if hasDefaultLanguage {
+			result["@language"] = defaultLanguage
 		}
 	}
 	// 6)
