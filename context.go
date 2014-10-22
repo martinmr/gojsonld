@@ -63,6 +63,20 @@ func (c *Context) clone() *Context {
 	for key, value := range c.termDefinitions {
 		clonedContext.termDefinitions[key] = deepCopy(value)
 	}
+	clonedContext.options = &Options{
+		Base:                  c.options.Base,
+		CompactArrays:         c.options.CompactArrays,
+		ExpandContext:         deepCopy(c.options.ExpandContext),
+		DocumentLoader:        c.options.DocumentLoader,
+		Embed:                 c.options.Embed,
+		Explicit:              c.options.Explicit,
+		UseRdfType:            c.options.UseRdfType,
+		UseNativeTypes:        c.options.UseNativeTypes,
+		ProduceGeneralizedRdf: c.options.ProduceGeneralizedRdf,
+		Format:                c.options.Format,
+		UseNamespaces:         c.options.UseNamespaces,
+		OutputForm:            c.options.OutputForm,
+	}
 	return clonedContext
 }
 
