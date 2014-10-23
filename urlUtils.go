@@ -32,6 +32,9 @@ func resolve(base, ref *string) (*string, error) {
 }
 
 func removeBase(base, ref string) (string, error) {
+	if base == "" {
+		return ref, nil
+	}
 	baseUrl, baseErr := url.Parse(base)
 	refUrl, refErr := url.Parse(ref)
 	if baseErr != nil {
@@ -41,8 +44,7 @@ func removeBase(base, ref string) (string, error) {
 		return "", refErr
 	}
 	if baseUrl.Host != refUrl.Host || baseUrl.Scheme != refUrl.Scheme {
-		//TODO handle error
-		return "", UNKNOWN_ERROR
+		return ref, nil
 	}
 	rel, err := filepath.Rel(baseUrl.Path, refUrl.Path)
 	if err != nil {
