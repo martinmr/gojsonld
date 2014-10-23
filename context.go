@@ -51,17 +51,23 @@ func (c *Context) init(options *Options) {
 
 func (c *Context) clone() *Context {
 	var clonedContext *Context = new(Context)
-	clonedContext.table = make(map[string]interface{}, 0)
-	for key, value := range c.table {
-		clonedContext.table[key] = deepCopy(value)
+	if !isNil(c.table) {
+		clonedContext.table = make(map[string]interface{}, 0)
+		for key, value := range c.table {
+			clonedContext.table[key] = deepCopy(value)
+		}
 	}
-	clonedContext.inverse = make(map[string]interface{}, 0)
-	for key, value := range c.inverse {
-		clonedContext.inverse[key] = deepCopy(value)
+	if !isNil(c.inverse) {
+		clonedContext.inverse = make(map[string]interface{}, 0)
+		for key, value := range c.inverse {
+			clonedContext.inverse[key] = deepCopy(value)
+		}
 	}
-	clonedContext.termDefinitions = make(map[string]interface{}, 0)
-	for key, value := range c.termDefinitions {
-		clonedContext.termDefinitions[key] = deepCopy(value)
+	if !isNil(c.termDefinitions) {
+		clonedContext.termDefinitions = make(map[string]interface{}, 0)
+		for key, value := range c.termDefinitions {
+			clonedContext.termDefinitions[key] = deepCopy(value)
+		}
 	}
 	clonedContext.options = &Options{
 		Base:                  c.options.Base,
