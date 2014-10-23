@@ -37,14 +37,12 @@ func testExpand(inputFile, outputFile, contextFile, base string, t *testing.T) {
 		t.Error("Expansion failed with error ", expandErr.Error())
 		return
 	}
-
 	expandedString, _ := json.MarshalIndent(expandedJson, "", "    ")
 	outputString, _ := json.MarshalIndent(outputJson, "", "    ")
 	if !reflect.DeepEqual(expandedJson, outputJson) {
 		t.Error("Expected:\n", string(outputString), "\nGot:\n",
 			string(expandedString))
 	}
-
 }
 
 func testExpandBase(inputFile, outputFile, base string, t *testing.T) {
