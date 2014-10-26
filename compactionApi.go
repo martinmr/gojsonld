@@ -1,14 +1,11 @@
 package gojsonld
 
 import (
-	"fmt"
 	"strings"
 )
 
 func compact(activeContext *Context, activeProperty string,
 	element interface{}, compactArrays bool) (interface{}, error) {
-	//Create inverse if not done yet.
-	activeContext.getInverse()
 	// 1)
 	if isScalar(element) {
 		return element, nil
@@ -60,7 +57,6 @@ func compact(activeContext *Context, activeProperty string,
 	keys := sortedKeys(elementMap)
 	for _, expandedProperty := range keys {
 		expandedValue := elementMap[expandedProperty]
-		fmt.Println(expandedProperty, expandedValue)
 		var compactedValue interface{}
 		// 7.1)
 		if expandedProperty == "@id" || expandedProperty == "@type" {
@@ -75,7 +71,7 @@ func compact(activeContext *Context, activeProperty string,
 				// 7.1.2)
 			} else {
 				// 7.1.2.1)
-				compactedValue = make([]interface{}, 0)
+				types := make([]interface{}, 0)
 				// 7.1.2.2)
 				expandedArray := expandedValue.([]interface{})
 				for _, expandedType := range expandedArray {
@@ -85,12 +81,14 @@ func compact(activeContext *Context, activeProperty string,
 					if !isNil(compactErr) {
 						return nil, compactErr
 					}
-					compactedValue = append(compactedValue.([]interface{}),
+					types = append(types,
 						*tmpCompact)
 				}
 				// 7.1.2.3)
-				if len(compactedValue.([]interface{})) == 1 {
-					compactedValue = compactedValue.([]interface{})[0]
+				if len(types) == 1 {
+					compactedValue = types[0]
+				} else {
+					compactedValue = types
 				}
 			}
 			// 7.1.3)
@@ -119,7 +117,7 @@ func compact(activeContext *Context, activeProperty string,
 				// 7.2.2.1)
 				if activeContext.isReverseProperty(property) {
 					// 7.2.2.1.1)
-					if _, isValueArray := value.([]interface{}); isValueArray &&
+					if _, isValueArray := value.([]interface{}); !isValueArray &&
 						(activeContext.getContainer(property) == "@set" ||
 							!compactArrays) {
 						tmpArray := make([]interface{}, 0)
@@ -270,9 +268,6 @@ func compact(activeContext *Context, activeProperty string,
 					}
 				} else if _, hasProperty := result[itemActiveProperty]; hasProperty {
 					// 7.6.4.3
-					fmt.Println("7.6.4.3", container)
-					fmt.Println("7.6.4.3", itemActiveProperty)
-					fmt.Println("7.6.4.3", result)
 					return nil, COMPACTION_TO_LIST_OF_LISTS
 				}
 			}
@@ -310,7 +305,6 @@ func compact(activeContext *Context, activeProperty string,
 				// 7.6.6)
 			} else {
 				// 7.6.6.1)
-				//TODO check logic
 				_, isCompactedArray := compactedItem.([]interface{})
 				if (!compactArrays || "@set" == container || "@list" == container ||
 					"@graph" == expandedProperty || "@list" == expandedProperty) &&
@@ -519,7 +513,7 @@ func compactIri(activeContext *Context, iri *string,
 				} else {
 					itemType = "@id"
 				}
-				// 2.4.6.4)
+				// 2.6.4.4)
 				if commonLanguage == "" {
 					commonLanguage = itemLanguage
 					// 2.6.4.5)
@@ -534,7 +528,7 @@ func compactIri(activeContext *Context, iri *string,
 					commonType = "@none"
 				}
 				// 2.6.4.8)
-				if commonLanguage == "@none" && commonLanguage == "@none" {
+				if commonLanguage == "@none" && commonType == "@none" {
 					break
 				}
 			}
@@ -606,23 +600,21 @@ func compactIri(activeContext *Context, iri *string,
 			tdResult, hasDefinition := activeContext.termDefinitions[*resultKey]
 			tdResultMap, isMap := tdResult.(map[string]interface{})
 			resultIri, hasIri := tdResultMap["@id"]
-			valueIri := value.(map[string]interface{})["@id"]
+			valueIri := valueMap["@id"]
 			if hasDefinition && isMap && hasIri &&
 				valueIri.(string) == resultIri.(string) {
 				preferredValues = append(preferredValues, "@vocab")
 				preferredValues = append(preferredValues, "@id")
-				preferredValues = append(preferredValues, "@none")
 				// 2.12.2)
 			} else {
 				preferredValues = append(preferredValues, "@id")
 				preferredValues = append(preferredValues, "@vocab")
-				preferredValues = append(preferredValues, "@none")
 			}
 			// 2.13)
 		} else {
 			preferredValues = append(preferredValues, typeLanguageValue)
-			preferredValues = append(preferredValues, "@none")
 		}
+		preferredValues = append(preferredValues, "@none")
 		// 2.14)
 		term := selectTerm(activeContext, *iri, containers, typeLanguage,
 			preferredValues)

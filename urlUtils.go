@@ -7,7 +7,7 @@ import (
 )
 
 func resolve(base, ref *string) (*string, error) {
-	if isNil(base) {
+	if isNil(base) || *base == "" {
 		if isNil(ref) {
 			return nil, nil
 		}
@@ -50,6 +50,19 @@ func removeBase(base, ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if !strings.HasSuffix(base, "/") {
+		if rel == "." {
+			rel = ""
+		} else if rel == ".." {
+			rel = "./"
+		} else if rel == "../.." {
+			rel = "../"
+		} else if strings.HasPrefix(rel, "../") {
+			rel = rel[3:]
+		}
+	}
+
 	refUrl.Host = ""
 	refUrl.Scheme = ""
 	refUrl.Path = rel
