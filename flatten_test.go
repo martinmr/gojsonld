@@ -146,10 +146,10 @@ func TestFlatten0020(t *testing.T) {
 		"", t)
 }
 
-//func TestFlatten0021(t *testing.T) {
-//testFlattenSimple("flatten-0021-in.jsonld", "flatten-0021-out.jsonld",
-//"", t)
-//}
+func TestFlatten0021(t *testing.T) {
+	testFlattenSimple("flatten-0021-in.jsonld", "flatten-0021-out.jsonld",
+		"", t)
+}
 
 func TestFlatten0022(t *testing.T) {
 	testFlattenSimple("flatten-0022-in.jsonld", "flatten-0022-out.jsonld",
