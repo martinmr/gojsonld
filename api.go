@@ -87,7 +87,6 @@ func Compact(input interface{}, context interface{},
 	}
 	activeContext = *tmpContext
 	//8)
-	//TODO check passing "" works
 	compacted, compactErr := compact(&activeContext, "", expanded,
 		options.CompactArrays)
 	if !isNil(compactErr) {
@@ -119,4 +118,25 @@ func Compact(input interface{}, context interface{},
 	}
 	//9
 	return compacted.(map[string]interface{}), nil
+}
+
+func Flatten(input interface{}, context interface{},
+	options *Options) (interface{}, error) {
+	// 2 - 6
+	expanded, expandErr := Expand(input, options)
+	if !isNil(expandErr) {
+		return nil, expandErr
+	}
+	// 7)
+	contextMap, isMap := context.(map[string]interface{})
+	contextValue, hasContext := contextMap["@context"]
+	if isMap && hasContext {
+		context = contextValue
+	}
+	// 8)
+	flattened, flattenErr := flatten(expanded, context, options)
+	if !isNil(flattenErr) {
+		return nil, flattenErr
+	}
+	return flattened, nil
 }
