@@ -41,6 +41,7 @@ func testCompact(inputFile, outputFile, contextFile, base string,
 			string(compactedString))
 	}
 }
+
 func testCompactSimple(inputFile, outputFile, contextFile, base string,
 	t *testing.T) {
 	testCompact(inputFile, outputFile, contextFile, base, true, t)
