@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-func flatten(element interface{}, activeContext *Context) (interface{}, error) {
+func flatten(element interface{}, context interface{},
+	options *Options) (interface{}, error) {
 	// 1)
 	nodeMap := make(map[string]interface{}, 0)
 	nodeMap["@default"] = make(map[string]interface{}, 0)
@@ -16,7 +17,7 @@ func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 	defaultArg := "@default"
 	err := generateNodeMap(element, nodeMap, &defaultArg, nil,
 		nil, nil, &idGenerator)
-	if err != nil {
+	if !isNil(err) {
 		return nil, err
 	}
 	// 3)
@@ -38,7 +39,9 @@ func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 		// 4.3)
 		//TODO check spec (java comment states this step should only
 		//be done if it does not already exists
-		entry["@graph"] = make([]interface{}, 0)
+		if _, hasGraph := entry["@graph"]; !hasGraph {
+			entry["@graph"] = make([]interface{}, 0)
+		}
 		// 4.4)
 		keys := sortedKeys(graph)
 		for _, id := range keys {
@@ -54,19 +57,26 @@ func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 	keys := sortedKeys(defaultGraph)
 	for _, id := range keys {
 		node := defaultGraph[id].(map[string]interface{})
-		if _, hasId := defaultGraph["@id"]; !(hasId && len(node) == 1) {
+		if _, hasId := node["@id"]; !(hasId && len(node) == 1) {
 			flattened = append(flattened, node)
 		}
 	}
 	// 7)
-	if activeContext == nil {
+	if isNil(context) {
 		return flattened, nil
 	}
+	activeContext := &Context{}
+	activeContext.init(options)
+	emptyArray := make([]string, 0)
+	tmpContext, parseErr := parse(activeContext, context, emptyArray)
+	if !isNil(parseErr) {
+		return nil, parseErr
+	}
+	activeContext = tmpContext
 	// 8)
-	//TODO make sure "" is ok to send as default value
 	compacted, compactErr := compact(activeContext, "", flattened,
 		activeContext.options.CompactArrays)
-	if compactErr != nil {
+	if !isNil(compactErr) {
 		return nil, compactErr
 	}
 	if _, isArray := compacted.([]interface{}); !isArray {
@@ -76,11 +86,11 @@ func flatten(element interface{}, activeContext *Context) (interface{}, error) {
 	}
 	graphArg := "@graph"
 	alias, compactErr := compactIri(activeContext, &graphArg, nil, false, false)
-	if compactErr != nil {
+	if !isNil(compactErr) {
 		return nil, compactErr
 	}
 	returnValue, serializeErr := activeContext.serialize()
-	if serializeErr != nil {
+	if !isNil(serializeErr) {
 		return nil, serializeErr
 	}
 	returnValue[*alias] = compacted
@@ -96,10 +106,11 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		for _, item := range elementArray {
 			err := generateNodeMap(item, nodeMap, activeGraph, activeSubject,
 				activeProperty, list, idGenerator)
-			if err != nil {
+			if !isNil(err) {
 				return err
 			}
 		}
+		return nil
 	}
 	// 2)
 	elementMap := element.(map[string]interface{})
@@ -109,26 +120,32 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 	}
 	graph := nodeMap[*activeGraph].(map[string]interface{})
 	var node map[string]interface{}
-	if activeSubject == nil {
+	if isNil(activeSubject) {
 		node = nil
 	} else {
-		node = graph[activeSubject.(string)].(map[string]interface{})
+		activeSubjectString, isString := activeSubject.(string)
+		if isString {
+			node = graph[activeSubjectString].(map[string]interface{})
+		} else {
+			node = nil
+		}
 	}
 	// 3)
 	if _, hasType := elementMap["@type"]; hasType {
-		var oldTypes []string
-		newTypes := make([]string, 0)
-		_, isArray := elementMap["@type"].([]string)
+		var oldTypes []interface{}
+		newTypes := make([]interface{}, 0)
+		_, isArray := elementMap["@type"].([]interface{})
 		if isArray {
-			oldTypes = elementMap["@type"].([]string)
+			oldTypes = elementMap["@type"].([]interface{})
 		} else {
-			oldTypes = make([]string, 0)
+			oldTypes = make([]interface{}, 0)
 			oldTypes = append(oldTypes, elementMap["@type"].(string))
 		}
 		for _, item := range oldTypes {
-			if strings.HasPrefix(item, "_:") {
+			if strings.HasPrefix(item.(string), "_:") {
+				itemString := item.(string)
 				newTypes = append(newTypes,
-					idGenerator.generateBlankNodeIdentifier(&item))
+					idGenerator.generateBlankNodeIdentifier(&itemString))
 			} else {
 				newTypes = append(newTypes, item)
 			}
@@ -142,7 +159,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 	// 4)
 	if _, hasValue := elementMap["@value"]; hasValue {
 		// 4.1)
-		if list == nil {
+		if isNil(list) {
 			mergeValue(node, *activeProperty, elementMap)
 			// 4.2)
 		} else {
@@ -163,13 +180,11 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		//6.1)
 		var id string
 		if elementID, hasId := elementMap["@id"]; hasId {
-			if strings.HasPrefix(id, "_:") {
-				elementIDString := elementID.(string)
-				id = idGenerator.generateBlankNodeIdentifier(&elementIDString)
-			} else {
-				id = elementMap["@id"].(string)
-			}
+			id = elementID.(string)
 			delete(elementMap, "@id")
+			if strings.HasPrefix(id, "_:") {
+				id = idGenerator.generateBlankNodeIdentifier(&id)
+			}
 			// 6.2)
 		} else {
 			id = idGenerator.generateBlankNodeIdentifier(nil)
@@ -185,15 +200,15 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		// node := graph[id].(map[string]interface{})
 		// 6.5)
 		if _, isMap := activeSubject.(map[string]interface{}); isMap {
-			mergeValue(graph["@id"].(map[string]interface{}), *activeProperty,
+			mergeValue(graph[id].(map[string]interface{}), *activeProperty,
 				activeSubject)
 			// 6.6)
-		} else if activeProperty != nil {
+		} else if !isNil(activeProperty) {
 			// 6.6.1)
 			reference := make(map[string]interface{}, 0)
 			reference["@id"] = id
 			// 6.6.2)
-			if list == nil {
+			if isNil(list) {
 				mergeValue(node, *activeProperty, reference)
 				// 6.6.3)
 			} else {
@@ -238,7 +253,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 					// 6.9.3.1.1)
 					err := generateNodeMap(value, nodeMap, activeGraph,
 						referencedNode, &property, nil, idGenerator)
-					if err != nil {
+					if !isNil(err) {
 						return err
 					}
 				}
@@ -250,7 +265,7 @@ func generateNodeMap(element interface{}, nodeMap map[string]interface{},
 		if graphVal, hasGraph := elementMap["@graph"]; hasGraph {
 			err := generateNodeMap(graphVal, nodeMap, &id, nil, nil, nil,
 				idGenerator)
-			if err != nil {
+			if !isNil(err) {
 				return err
 			}
 			delete(elementMap, "@graph")
@@ -284,7 +299,7 @@ type BlankNodeIdGenerator struct {
 
 func (g *BlankNodeIdGenerator) generateBlankNodeIdentifier(identifier *string) string {
 	// 1)
-	if identifier != nil {
+	if !isNil(identifier) {
 		if id, hasId := g.identifierMap[*identifier]; hasId {
 			return id
 		}
@@ -294,7 +309,7 @@ func (g *BlankNodeIdGenerator) generateBlankNodeIdentifier(identifier *string) s
 	// 3)
 	g.counter += 1
 	// 4)
-	if identifier != nil {
+	if !isNil(identifier) {
 		g.identifierMap[*identifier] = newId
 	}
 	// 5)
