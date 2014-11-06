@@ -154,20 +154,8 @@ func mergeValue(obj map[string]interface{}, key string, value interface{}) {
 		values = make([]interface{}, 0)
 	}
 
-	if key == "@list" {
-		values = append(values, value)
-		obj[key] = values
-		return
-	}
-	switch v := value.(type) {
-	case map[string]interface{}:
-		if _, ex := v["@list"]; ex {
-			values = append(values, value)
-			obj[key] = values
-			return
-		}
-	}
-	if !deepContains(values, value) {
+	if key == "@list" || isListObject(value) ||
+		!deepContains(values, value) {
 		values = append(values, value)
 		obj[key] = values
 		return
@@ -250,26 +238,27 @@ func isIRI(value interface{}) bool {
 	return true
 }
 
-// /**
-//  * Returns true if the given value is a subject with properties.
-//  *
-//  * @param v
-//  *            the value to check.
-//  *
-//  * @return true if the value is a subject with properties, false if not.
-//  */
-// static boolean isNode(Object v) {
-//     // Note: A value is a subject if all of these hold true:
-//     // 1. It is an Object.
-//     // 2. It is not a @value, @set, or @list.
-//     // 3. It has more than 1 key OR any existing key is not @id.
-//     if (v instanceof Map
-//             && !(((Map) v).containsKey("@value") || ((Map) v).containsKey("@set") || ((Map) v)
-//                     .containsKey("@list"))) {
-//         return ((Map<String, Object>) v).size() > 1 || !((Map) v).containsKey("@id");
-//     }
-//     return false;
-// }
+func isRelativeIri(value string) bool {
+	if !(isKeyword(value) || isAbsoluteIri(value)) {
+		return true
+	}
+	return false
+}
+
+func isNodeObject(value interface{}) bool {
+	valueMap, isMap := value.(map[string]interface{})
+	if !isMap {
+		return false
+	}
+	_, hasValue := valueMap["@value"]
+	_, hasList := valueMap["@list"]
+	_, hasSet := valueMap["@set"]
+	_, hasID := valueMap["@id"]
+	if !(hasValue || hasList || hasSet) {
+		return len(valueMap) > 1 || !hasID
+	}
+	return false
+}
 
 // /**
 //  * Returns true if the given value is a subject reference.
