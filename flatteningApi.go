@@ -32,7 +32,7 @@ func flatten(element interface{}, context interface{},
 		if _, hasGraph := defaultGraph[graphName]; !hasGraph {
 			tmpMap := make(map[string]interface{}, 0)
 			tmpMap["@id"] = graphName
-			defaultGraph[graphName] = graphName
+			defaultGraph[graphName] = tmpMap
 		}
 		// 4.2)
 		entry := defaultGraph[graphName].(map[string]interface{})
