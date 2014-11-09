@@ -30,7 +30,8 @@ import (
 type Term interface {
 	// Method String should return the NTriples representation of this term.
 	String() string
-
+	// Returns the value without formatting
+	RawValue() string
 	// Method Equal should return whether this term is equal to another.
 	Equal(Term) bool
 }
@@ -57,6 +58,10 @@ func (term Resource) Equal(other Term) bool {
 	}
 
 	return false
+}
+
+func (term Resource) RawValue() string {
+	return term.URI
 }
 
 // A Literal is a textual value, with an associated language or datatype.
@@ -135,6 +140,10 @@ func (term Literal) Equal(other Term) bool {
 	return true
 }
 
+func (term Literal) RawValue() string {
+	return term.Value
+}
+
 // A BlankNode is an RDF blank node i.e. an unqualified URI/IRI.
 type BlankNode struct {
 	ID string
@@ -162,4 +171,23 @@ func (term BlankNode) Equal(other Term) bool {
 	}
 
 	return false
+}
+
+func (term BlankNode) RawValue() string {
+	return term.String()
+}
+
+func isTermBlankNode(term Term) bool {
+	_, isBlankNode := term.(BlankNode)
+	return isBlankNode
+}
+
+func isTermResource(term Term) bool {
+	_, isResource := term.(Resource)
+	return isResource
+}
+
+func isTermLiteral(term Term) bool {
+	_, isLiteral := term.(Literal)
+	return isLiteral
 }
