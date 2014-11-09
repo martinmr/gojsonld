@@ -140,3 +140,13 @@ func Flatten(input interface{}, context interface{},
 	}
 	return flattened, nil
 }
+
+func ToRDF(input interface{}, options *Options) (*Dataset, error) {
+	activeContext := &Context{}
+	activeContext.init(options)
+	rdfDataset, err := toRDF(activeContext, input)
+	if !isNil(err) {
+		return nil, err
+	}
+	return rdfDataset, nil
+}

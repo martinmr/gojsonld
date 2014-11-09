@@ -231,9 +231,9 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 		nodeMap := graphMap[name].(map[string]interface{})
 		// 3.5)
 		for _, triple := range graph {
-			subject := triple.Subject.String()
-			predicate := triple.Predicate.String()
-			object := triple.Object.String()
+			subject := triple.Subject.RawValue()
+			predicate := triple.Predicate.RawValue()
+			object := triple.Object.RawValue()
 			// 3.5.1)
 			if _, hasSubject := nodeMap[subject]; !hasSubject {
 				tmpMap := make(map[string]interface{}, 0)
@@ -333,8 +333,8 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 				// 4.3.4.5)
 				head = head[RDF_REST].([]interface{})[0].(map[string]interface{})
 				// 4.3.4.6)
-				list = list[:(len(list) - 2)]
-				listNodes = listNodes[:(len(list) - 2)]
+				list = list[:(len(list) - 1)]
+				listNodes = listNodes[:(len(list) - 1)]
 			}
 			// 4.3.5)
 			delete(head, "@id")
@@ -421,11 +421,9 @@ func isWellFormedListNode(node interface{}) bool {
 
 func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 	// 1)
-	//TODO IMPORTANT comparing value.String() to an IRI needs to be fixed
-	// everywhere
-	if isIRI(value.String()) || isBlankNodeIdentifier(value.String()) {
+	if isTermResource(value) || isTermBlankNode(value) {
 		returnValue := make(map[string]interface{}, 0)
-		returnValue["@id"] = value.String()
+		returnValue["@id"] = value.RawValue()
 		return returnValue
 	}
 	//2)
@@ -433,33 +431,35 @@ func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 	// 2.1)
 	result := make(map[string]interface{}, 0)
 	// 2.2)
-	convertedValue := valueLiteral.Value
+	var convertedValue interface{}
+	convertedValue = valueLiteral.Value
 	// 2.3)
 	var typeValue interface{}
 	typeValue = nil
 	// 2.4)
 	if useNativeTypes {
 		// 2.4.1)
-		if valueLiteral.Datatype.String() == XSD_STRING {
+		if valueLiteral.Datatype.RawValue() == XSD_STRING {
 			//TODO java version is different and does not add
 			//string to result in this case
+			//does nothing
 			// 2.4.2)
-		} else if valueLiteral.Datatype.String() == XSD_BOOLEAN {
+		} else if valueLiteral.Datatype.RawValue() == XSD_BOOLEAN {
 			if convertedValue == "true" {
-				result["@value"] = true
+				convertedValue = true
 			} else if convertedValue == "false" {
-				result["@value"] = false
+				convertedValue = false
 			}
 			// 2.4.3)
-		} else if valueLiteral.Datatype.String() == XSD_DOUBLE {
-			floatValue, floatErr := strconv.ParseFloat(convertedValue, 64)
+		} else if valueLiteral.Datatype.RawValue() == XSD_DOUBLE {
+			floatValue, floatErr := strconv.ParseFloat(convertedValue.(string), 64)
 			if isNil(floatErr) {
-				result["@value"] = floatValue
+				convertedValue = floatValue
 			}
-		} else if valueLiteral.Datatype.String() == XSD_INTEGER {
-			intValue, intErr := strconv.ParseInt(convertedValue, 10, 64)
+		} else if valueLiteral.Datatype.RawValue() == XSD_INTEGER {
+			intValue, intErr := strconv.ParseInt(convertedValue.(string), 10, 64)
 			if isNil(intErr) {
-				result["@value"] = intValue
+				convertedValue = intValue
 			}
 		}
 		// 2.5)
@@ -467,7 +467,7 @@ func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 		result["@language"] = valueLiteral.Language
 		// 2.6)
 	} else {
-		if valueLiteral.Datatype.String() != XSD_STRING {
+		if valueLiteral.Datatype.RawValue() != XSD_STRING {
 			typeValue = valueLiteral.Datatype
 		}
 	}
