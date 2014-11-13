@@ -4,10 +4,11 @@ import (
 	"io/ioutil"
 )
 
-func ReadDatasetFromFile(path string) ([]byte, error) {
+func ReadDatasetFromFile(path string) (*Dataset, error) {
 	file, fileErr := ioutil.ReadFile(path)
 	if fileErr != nil {
 		return nil, fileErr
 	}
-	return file, nil
+	dataset, parseErr := parseDataset(file)
+	return dataset, parseErr
 }

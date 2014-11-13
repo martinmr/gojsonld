@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -91,7 +92,7 @@ func parseDataset(input []byte) (*Dataset, error) {
 		if !isNil(graphErr) {
 			return nil, graphErr
 		}
-		appendTriple(dataset, graph, NewTriple(subject, object, predicate))
+		appendTriple(dataset, graph, NewTriple(subject, predicate, object))
 	}
 	return dataset, nil
 }
@@ -115,12 +116,12 @@ func parsePredicate(value string) (Term, error) {
 }
 
 func parseObject(value string) (Term, error) {
-	if IRIREF.MatchString(value) {
+	if LITERAL.MatchString(value) {
+		return parseLiteral(value), nil
+	} else if IRIREF.MatchString(value) {
 		return NewResource(value[1:(len(value) - 1)]), nil
 	} else if BLANK_NODE_LABEL.MatchString(value) {
 		return NewBlankNode(value[2:]), nil
-	} else if LITERAL.MatchString(value) {
-		return parseLiteral(value), nil
 	} else {
 		return nil, errors.New("Invalid subject")
 	}
@@ -135,7 +136,10 @@ func parseLiteral(value string) Term {
 	if dataType == "" {
 		dataTypeTerm = NewResource(XSD_STRING)
 	} else {
-		dataTypeTerm = NewResource(dataType[2:(len(dataType) - 1)])
+		dataTypeTerm = NewResource(dataType[3:(len(dataType) - 1)])
+	}
+	if language != "" {
+		language = language[1:]
 	}
 	return NewLiteralWithLanguageAndDatatype(unescapedValue, language, dataTypeTerm)
 }

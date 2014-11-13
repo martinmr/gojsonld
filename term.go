@@ -178,16 +178,16 @@ func (term BlankNode) RawValue() string {
 }
 
 func isTermBlankNode(term Term) bool {
-	_, isBlankNode := term.(BlankNode)
+	_, isBlankNode := term.(*BlankNode)
 	return isBlankNode
 }
 
 func isTermResource(term Term) bool {
-	_, isResource := term.(Resource)
+	_, isResource := term.(*Resource)
 	return isResource
 }
 
 func isTermLiteral(term Term) bool {
-	_, isLiteral := term.(Literal)
+	_, isLiteral := term.(*Literal)
 	return isLiteral
 }
