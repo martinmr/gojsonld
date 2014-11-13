@@ -150,3 +150,8 @@ func ToRDF(input interface{}, options *Options) (*Dataset, error) {
 	}
 	return rdfDataset, nil
 }
+
+func FromRDF(input *Dataset, options *Options) []interface{} {
+	jsonObject := fromRDF(input, options.UseNativeTypes, options.UseRdfType)
+	return jsonObject
+}

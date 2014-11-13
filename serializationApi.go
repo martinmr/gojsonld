@@ -313,7 +313,7 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 				nodeUsage := node["usages"].([]interface{})[0].(map[string]interface{})
 				// 4.3.3.4)
 				node = nodeUsage["node"].(map[string]interface{})
-				property = nodeUsage["propety"].(string)
+				property = nodeUsage["property"].(string)
 				head = nodeUsage["value"].(map[string]interface{})
 				// 4.3.3.5)
 				if !isBlankNodeIdentifier(node["@id"].(string)) {
@@ -323,7 +323,7 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 			// 4.3.4)
 			if property == RDF_FIRST {
 				// 4.3.4.1)
-				if RDF_FIRST == node["@id"].(string) {
+				if RDF_NIL == node["@id"].(string) {
 					continue
 				}
 				//4.3.4.3)
@@ -334,7 +334,7 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 				head = head[RDF_REST].([]interface{})[0].(map[string]interface{})
 				// 4.3.4.6)
 				list = list[:(len(list) - 1)]
-				listNodes = listNodes[:(len(list) - 1)]
+				listNodes = listNodes[:(len(listNodes) - 1)]
 			}
 			// 4.3.5)
 			delete(head, "@id")
@@ -362,21 +362,23 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 			// 6.1.1)
 			node["@graph"] = make([]interface{}, 0)
 			// 6.1.2)
-			keysGraph := sortedKeys(graphMap)
+			keysGraph := sortedKeys(graphMap[subject].(map[string]interface{}))
 			for _, s := range keysGraph {
 				n := graphMap[subject].(map[string]interface{})[s]
 				nMap := n.(map[string]interface{})
 				_, hasID := nMap["@id"]
+				delete(nMap, "usages")
 				if len(nMap) == 1 && hasID {
 					continue
 				}
-				delete(nMap, "usages")
 				node["@graph"] = append(node["@graph"].([]interface{}), nMap)
 			}
 		}
 		// 6.2)
 		delete(node, "usages")
-		result = append(result, node)
+		if _, hasID := node["@id"]; !(len(node) == 1 && hasID) {
+			result = append(result, node)
+		}
 	}
 	// 7)
 	return result
@@ -384,10 +386,10 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 
 func isWellFormedListNode(node interface{}) bool {
 	nodeMap := node.(map[string]interface{})
-	if len(nodeMap["usage"].([]interface{})) != 1 {
+	if len(nodeMap["usages"].([]interface{})) != 1 {
 		return false
 	}
-	keys := 0
+	keys := 1
 	if first, hasKey := nodeMap[RDF_FIRST]; hasKey {
 		keys++
 		firstArray, isArray := first.([]interface{})
@@ -427,7 +429,7 @@ func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 		return returnValue
 	}
 	//2)
-	valueLiteral := value.(Literal)
+	valueLiteral := value.(*Literal)
 	// 2.1)
 	result := make(map[string]interface{}, 0)
 	// 2.2)
@@ -451,16 +453,14 @@ func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 				convertedValue = false
 			}
 			// 2.4.3)
-		} else if valueLiteral.Datatype.RawValue() == XSD_DOUBLE {
+		} else if valueLiteral.Datatype.RawValue() == XSD_DOUBLE ||
+			valueLiteral.Datatype.RawValue() == XSD_INTEGER {
 			floatValue, floatErr := strconv.ParseFloat(convertedValue.(string), 64)
 			if isNil(floatErr) {
 				convertedValue = floatValue
 			}
-		} else if valueLiteral.Datatype.RawValue() == XSD_INTEGER {
-			intValue, intErr := strconv.ParseInt(convertedValue.(string), 10, 64)
-			if isNil(intErr) {
-				convertedValue = intValue
-			}
+		} else {
+			typeValue = valueLiteral.Datatype.RawValue()
 		}
 		// 2.5)
 	} else if valueLiteral.Language != "" {
@@ -468,7 +468,7 @@ func rdfToObject(value Term, useNativeTypes bool) map[string]interface{} {
 		// 2.6)
 	} else {
 		if valueLiteral.Datatype.RawValue() != XSD_STRING {
-			typeValue = valueLiteral.Datatype
+			typeValue = valueLiteral.Datatype.RawValue()
 		}
 	}
 	// 2.7)
