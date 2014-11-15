@@ -213,6 +213,8 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 	// 2)
 	graphMap := make(map[string]interface{})
 	graphMap["@default"] = defaultGraph
+	//TODO possible draft error
+	nodeUsagesMap := make(map[string]interface{}, 0)
 	// 3)
 	for name, graph := range dataset.Graphs {
 		// 3.2)
@@ -262,21 +264,14 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 			// 3.5.8)
 			if isIRI(object) || isBlankNodeIdentifier(object) {
 				nodeObjectMap := nodeMap[object].(map[string]interface{})
-				// 3.5.8.1)
-				if _, hasUsages := nodeObjectMap["usages"]; !hasUsages {
-					nodeObjectMap["usages"] = make([]interface{}, 0)
-					nodeMap[object] = nodeObjectMap
-				}
-				// 3.5.8.2)
-				usages := nodeObjectMap["usages"].([]interface{})
-				// 3.5.8.3)
 				tmpMap := make(map[string]interface{}, 0)
 				tmpMap["node"] = node
 				tmpMap["property"] = predicate
 				tmpMap["value"] = value
-				usages = append(usages, tmpMap)
-				nodeObjectMap["usages"] = usages
+				mergeValue(nodeObjectMap, "usages", tmpMap)
 				nodeMap[object] = nodeObjectMap
+				//TODO spec is wrong
+				mergeValue(nodeUsagesMap, object, name+"@@@"+node["@id"].(string))
 			}
 		}
 	}
@@ -304,7 +299,8 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 			//TODO check type of listNodes
 			listNodes := make([]interface{}, 0)
 			// 4.3.3)
-			for RDF_REST == property && isWellFormedListNode(node) {
+			for RDF_REST == property && isWellFormedListNode(node) &&
+				len(nodeUsagesMap[node["@id"].(string)].([]interface{})) == 1 {
 				// 4.3.3.1)
 				list = append(list, node[RDF_FIRST].([]interface{})[0])
 				// 4.3.3.2)
@@ -386,37 +382,45 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 
 func isWellFormedListNode(node interface{}) bool {
 	nodeMap := node.(map[string]interface{})
-	if len(nodeMap["usages"].([]interface{})) != 1 {
+	//TODO spec has no mention of @id
+	for key := range nodeMap {
+		if key != "@id" && key != "@type" && key != RDF_FIRST &&
+			key != RDF_REST && key != "usages" {
+			return false
+		}
+	}
+	if !isBlankNodeIdentifier(nodeMap["@id"].(string)) {
 		return false
 	}
-	keys := 1
+	if usages, hasUsages := nodeMap["usages"]; hasUsages {
+		usagesArray, isArray := usages.([]interface{})
+		if !(isArray && len(usagesArray) == 1) {
+			return false
+		}
+	} else {
+		return false
+	}
 	if first, hasKey := nodeMap[RDF_FIRST]; hasKey {
-		keys++
 		firstArray, isArray := first.([]interface{})
 		if !(isArray && len(firstArray) == 1) {
 			return false
 		}
+	} else {
+		return false
 	}
 	if rest, hasKey := nodeMap[RDF_REST]; hasKey {
-		keys++
 		restArray, isArray := rest.([]interface{})
 		if !(isArray && len(restArray) == 1) {
 			return false
 		}
+	} else {
+		return false
 	}
 	if typeValue, hasType := nodeMap["@type"]; hasType {
-		keys++
 		typeArray, isArray := typeValue.([]interface{})
 		if !(isArray && len(typeArray) == 1 && RDF_LIST == typeArray[0]) {
 			return false
 		}
-	}
-	//TODO spec has no mention of @id
-	if _, hasID := nodeMap["@id"]; hasID {
-		keys++
-	}
-	if keys < len(nodeMap) {
-		return false
 	}
 	return true
 }
