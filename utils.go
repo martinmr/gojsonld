@@ -253,47 +253,41 @@ func isNodeObject(value interface{}) bool {
 	_, hasValue := valueMap["@value"]
 	_, hasList := valueMap["@list"]
 	_, hasSet := valueMap["@set"]
-	_, hasID := valueMap["@id"]
 	if !(hasValue || hasList || hasSet) {
-		return len(valueMap) > 1 || !hasID
+		return true
 	}
 	return false
 }
-
-// /**
-//  * Returns true if the given value is a subject reference.
-//  *
-//  * @param v
-//  *            the value to check.
-//  *
-//  * @return true if the value is a subject reference, false if not.
-//  */
-// static boolean isNodeReference(Object v) {
-//     // Note: A value is a subject reference if all of these hold true:
-//     // 1. It is an Object.
-//     // 2. It has a single key: @id.
-//     return (v instanceof Map && ((Map<String, Object>) v).size() == 1 && ((Map<String, Object>) v)
-//             .containsKey("@id"));
-// }
-
-//TODO fix this function
-//func isRelativeIRI(value string) bool {
-//if !isKeyword(value) || isAbsoluteIri(value) {
-//return true
-//}
-//return false
-//}
-// // TODO: fix this test
-// public static boolean isRelativeIri(String value) {
-//     if (!(isKeyword(value) || isAbsoluteIri(value))) {
-//         return true;
-//     }
-//     return false;
-// }
 
 func isBlankNodeIdentifier(value string) bool {
 	if strings.HasPrefix(value, "_:") {
 		return true
 	}
 	return false
+}
+
+func convertFloatValue(value string) string {
+	minusIndex := strings.Index(value, "-")
+	plusIndex := strings.Index(value, "+")
+	var index int
+	if minusIndex > plusIndex {
+		index = minusIndex
+	} else {
+		index = plusIndex
+	}
+	base := value[:(index - 1)]
+	dotIndex := strings.Index(base, ".")
+	if dotIndex < 0 {
+		base += ".0"
+	}
+	exponent := value[(index + 1):]
+	exponent = strings.TrimLeft(exponent, "0")
+	if exponent == "" {
+		exponent = "0"
+	}
+	if plusIndex > -1 {
+		return base + "E" + exponent
+	} else {
+		return base + "E-" + exponent
+	}
 }
