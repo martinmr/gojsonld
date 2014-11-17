@@ -1,19 +1,19 @@
 package gojsonld
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
 
 func toRDF(activeContext *Context, element interface{}) (*Dataset, error) {
 	// 1)
-	expanded, expandErr := expand(activeContext, nil, element)
+	expanded, expandErr := Expand(element, activeContext.options)
 	if !isNil(expandErr) {
 		return nil, expandErr
 	}
 	// 2)
 	nodeMap := make(map[string]interface{}, 0)
-	nodeMap["@default"] = make(map[string]interface{}, 0)
 	var idGenerator = BlankNodeIdGenerator{}
 	idGenerator.counter = 0
 	idGenerator.identifierMap = make(map[string]string, 0)
@@ -47,7 +47,7 @@ func toRDF(activeContext *Context, element interface{}) (*Dataset, error) {
 			nodeMapValue := node.(map[string]interface{})
 			keysNode := sortedKeys(nodeMapValue)
 			for _, property := range keysNode {
-				values := nodeMap[property]
+				values := nodeMapValue[property]
 				// 4.3.2.1)
 				if property == "@type" {
 					property = RDF_TYPE
@@ -65,14 +65,14 @@ func toRDF(activeContext *Context, element interface{}) (*Dataset, error) {
 				// RDF subject
 				var subject Term
 				if strings.HasPrefix(id, "_:") {
-					subject = NewBlankNode(id)
+					subject = NewBlankNode(id[2:])
 				} else {
 					subject = NewResource(id)
 				}
 				// RDF predicate
 				var predicate Term
 				if strings.HasPrefix(property, "_:") {
-					predicate = NewBlankNode(property)
+					predicate = NewBlankNode(property[2:])
 				} else {
 					predicate = NewResource(property)
 				}
@@ -80,8 +80,7 @@ func toRDF(activeContext *Context, element interface{}) (*Dataset, error) {
 				for _, item := range valuesArray {
 					if isListObject(item) {
 						list := item.(map[string]interface{})["@list"].([]interface{})
-						listTriples := make([]*Triple, 0)
-						listHead := listToRDF(list, listTriples, &idGenerator)
+						listHead, listTriples := listToRDF(list, &idGenerator)
 						triples = append(triples, NewTriple(subject, predicate,
 							listHead))
 						for _, triple := range listTriples {
@@ -98,12 +97,23 @@ func toRDF(activeContext *Context, element interface{}) (*Dataset, error) {
 			}
 		}
 		// 4.4 + 4.5)
+		if strings.HasPrefix(graphName, "_:") {
+			graphName = graphName[2:]
+		}
 		dataset.Graphs[graphName] = triples
 	}
 	return dataset, nil
 }
 
 func objectToRDF(item interface{}) Term {
+	//TODO spec is wrong
+	if itemString, isString := item.(string); isString {
+		if strings.HasPrefix(itemString, "_:") {
+			return NewBlankNode(itemString[2:])
+		} else {
+			return NewResource(itemString)
+		}
+	}
 	id, hasID := item.(map[string]interface{})["@id"]
 	language, hasLanguage := item.(map[string]interface{})["@language"]
 	// 1)
@@ -113,7 +123,8 @@ func objectToRDF(item interface{}) Term {
 	// 2)
 	if isNodeObject(item) {
 		if strings.HasPrefix(id.(string), "_:") {
-			return NewBlankNode(id.(string))
+			idString := id.(string)
+			return NewBlankNode(idString[2:])
 		} else {
 			return NewResource(id.(string))
 		}
@@ -123,7 +134,7 @@ func objectToRDF(item interface{}) Term {
 	// 4)
 	datatype, hasDatatype := item.(map[string]interface{})["@type"]
 	if !hasDatatype {
-		datatype = nil
+		datatype = ""
 	}
 	valueBool, isBool := value.(bool)
 	valueFloat, isFloat := value.(float64)
@@ -135,50 +146,61 @@ func objectToRDF(item interface{}) Term {
 		} else {
 			value = "false"
 		}
-		if isNil(datatype) {
+		if datatype == "" {
 			datatype = XSD_BOOLEAN
 		}
 		// 6)
-	} else if isFloat || datatype.(string) == XSD_DOUBLE {
-		value = strconv.FormatFloat(valueFloat, 'E', -1, 64)
-		if isNil(datatype) {
-			datatype = XSD_DOUBLE
+	} else if isFloat {
+		var tmpDatatype string
+		if valueFloat != math.Trunc(valueFloat) || datatype.(string) == XSD_DOUBLE {
+			value = strconv.FormatFloat(valueFloat, 'E', -1, 64)
+			value = convertFloatValue(value.(string))
+			tmpDatatype = XSD_DOUBLE
+		} else {
+			value = strconv.FormatFloat(valueFloat, 'f', 0, 64)
+			tmpDatatype = XSD_INTEGER
+		}
+		if datatype == "" {
+			datatype = tmpDatatype
 		}
 		// 7
 	} else if isInt || datatype.(string) == XSD_INTEGER {
 		value = strconv.FormatInt(valueInt, 10)
-		if isNil(datatype) {
+		if datatype == "" {
 			datatype = XSD_INTEGER
 		}
 		// 8)
 	} else {
-		if isNil(datatype) {
+		if datatype == "" {
 			if hasLanguage {
-				datatype = RDF_LANGSTRING
+				//TODO fix spec
+				//datatype = RDF_LANGSTRING
+				datatype = XSD_STRING
 			} else {
 				datatype = XSD_STRING
 			}
 		}
 	}
-	datatype = NewResource(datatype.(string))
+	datatypeTerm := NewResource(datatype.(string))
 	if hasLanguage {
 		return NewLiteralWithLanguageAndDatatype(value.(string), language.(string),
-			datatype.(Term))
+			datatypeTerm.(Term))
 	}
-	return NewLiteralWithDatatype(value.(string), datatype.(Term))
+	return NewLiteralWithDatatype(value.(string), datatypeTerm.(Term))
 }
 
-func listToRDF(list []interface{}, listTriples []*Triple,
-	idGenerator *BlankNodeIdGenerator) Term {
+func listToRDF(list []interface{}, idGenerator *BlankNodeIdGenerator) (Term, []*Triple) {
+	listTriples := make([]*Triple, 0)
 	// 1)
 	if len(list) == 0 {
-		return NewResource(RDF_NIL)
+		return NewResource(RDF_NIL), listTriples
 	}
 	// 2)
 	bnodes := make([]Term, 0)
 	for i := 0; i < len(list); i++ {
+		id := idGenerator.generateBlankNodeIdentifier(nil)
 		bnodes = append(bnodes,
-			NewBlankNode(idGenerator.generateBlankNodeIdentifier(nil)))
+			NewBlankNode(id[2:]))
 	}
 	// 3)
 	listTriples = make([]*Triple, 0)
@@ -203,7 +225,8 @@ func listToRDF(list []interface{}, listTriples []*Triple,
 		listTriples = append(listTriples,
 			NewTriple(subject, NewResource(RDF_REST), rest))
 	}
-	return bnodes[0]
+	// 5)
+	return bnodes[0], listTriples
 }
 
 func fromRDF(dataset *Dataset, useNativeTypes bool,
