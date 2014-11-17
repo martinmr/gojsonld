@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ func NewDataset() *Dataset {
 	return dataset
 }
 
-func (d *Dataset) serialize() string {
+func (d *Dataset) Serialize() string {
 	var result bytes.Buffer
 	for name, triples := range d.Graphs {
 		for _, triple := range triples {
@@ -108,11 +109,7 @@ func parseSubject(value string) (Term, error) {
 }
 
 func parsePredicate(value string) (Term, error) {
-	if IRIREF.MatchString(value) {
-		return NewResource(value[1:(len(value) - 1)]), nil
-	} else {
-		return nil, errors.New("Invalid subject")
-	}
+	return parseSubject(value)
 }
 
 func parseObject(value string) (Term, error) {
@@ -130,8 +127,8 @@ func parseObject(value string) (Term, error) {
 func parseLiteral(value string) Term {
 	literalQuote := STRING_LITERAL_QUOTE.FindString(value)
 	unescapedValue := unescapeValue(literalQuote[1:(len(literalQuote) - 1)])
-	dataType := DATATYPE.FindString(value)
-	language := LANGTAG.FindString(value)
+	dataType := DATATYPE.FindString(value[len(literalQuote):])
+	language := LANGTAG.FindString(value[len(literalQuote):])
 	var dataTypeTerm Term
 	if dataType == "" {
 		dataTypeTerm = NewResource(XSD_STRING)
@@ -169,4 +166,32 @@ func unescapeValue(value string) string {
 	value = strings.Replace(value, "\\r", "\r", -1)
 	value = strings.Replace(value, "\\t", "\t", -1)
 	return value
+}
+
+func (d *Dataset) Equal(other *Dataset) bool {
+	dMap := createFrequencyMap(d)
+	otherMap := createFrequencyMap(other)
+	return reflect.DeepEqual(dMap, otherMap)
+}
+
+func createFrequencyMap(d *Dataset) map[string]int {
+	frequencyMap := make(map[string]int, 0)
+	serializedDataset := d.Serialize()
+	readBuffer := bytes.NewBuffer([]byte(serializedDataset))
+	reader := bufio.NewReader(readBuffer)
+	for {
+		line, _, readErr := reader.ReadLine()
+		if !isNil(readErr) {
+			break
+		}
+		lineString := string(line)
+		if lineString == "" {
+			continue
+		}
+		if _, hasLine := frequencyMap[lineString]; !hasLine {
+			frequencyMap[lineString] = 0
+		}
+		frequencyMap[lineString] += 1
+	}
+	return frequencyMap
 }
