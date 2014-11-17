@@ -198,26 +198,6 @@ func sortedKeys(inputMap map[string]interface{}) []string {
 	return keys
 }
 
-// static void mergeCompactedValue(Map<String, Object> obj, String key, Object value) {
-//     if (obj == null) {
-//         return;
-//     }
-//     final Object prop = obj.get(key);
-//     if (prop == null) {
-//         obj.put(key, value);
-//         return;
-//     }
-//     if (!(prop instanceof List)) {
-//         final List<Object> tmp = new ArrayList<Object>();
-//         tmp.add(prop);
-//     }
-//     if (value instanceof List) {
-//         ((List<Object>) prop).addAll((List<Object>) value);
-//     } else {
-//         ((List<Object>) prop).add(value);
-//     }
-// }
-
 func isAbsoluteIri(value string) bool {
 	// TODO: this is a bit simplistic!
 	return strings.Contains(value, ":")
