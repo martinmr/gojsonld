@@ -20,12 +20,12 @@ func testFromRDF(input, output string, useNativeTypes, useRdfType bool, t *testi
 	options := &Options{}
 	options.UseNativeTypes = useNativeTypes
 	options.UseRdfType = useRdfType
-	deserializedJSON := FromRDF(inputRDF, options)
-	deserializedString, _ := json.MarshalIndent(deserializedJSON, "", "    ")
+	serializedJSON := FromRDF(inputRDF, options)
+	serializedString, _ := json.MarshalIndent(serializedJSON, "", "    ")
 	outputString, _ := json.MarshalIndent(outputJSON, "", "    ")
-	if !reflect.DeepEqual(deserializedJSON, outputJSON) {
+	if !reflect.DeepEqual(serializedJSON, outputJSON) {
 		t.Error("Expected:\n", string(outputString), "\nGot:\n",
-			string(deserializedString))
+			string(serializedString))
 		return
 	}
 }
