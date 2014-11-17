@@ -1,5 +1,0 @@
-package gojsonld
-
-import (
-//"testing"
-)
