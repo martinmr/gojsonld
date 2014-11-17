@@ -33,7 +33,8 @@ var (
 	GRAPH_LABEL = regexp.MustCompile("(?:" + IRIREF.String() + ")" + "|" + "(?:" + BLANK_NODE_LABEL.String() + ")")
 	OBJECT      = regexp.MustCompile("(?:" + IRIREF.String() + ")" + "|" + "(?:" + BLANK_NODE_LABEL.String() + ")" +
 		"|" + "(?:" + LITERAL.String() + ")")
-	PREDICATE = regexp.MustCompile(IRIREF.String())
+	//TODO predicate needs to be IRIFEF | BLANK_NODE in order to pass the tests
+	PREDICATE = regexp.MustCompile("(?:" + IRIREF.String() + ")" + "|" + "(?:" + BLANK_NODE_LABEL.String() + ")")
 	SUBJECT   = regexp.MustCompile("(?:" + IRIREF.String() + ")" + "|" + "(?:" + BLANK_NODE_LABEL.String() + ")")
 	STATEMENT = regexp.MustCompile("(?P<subject>" + SUBJECT.String() + ")" + WS_1_N.String() +
 		"(?P<predicate>" + PREDICATE.String() + ")" + WS_1_N.String() +
