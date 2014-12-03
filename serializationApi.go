@@ -294,7 +294,7 @@ func fromRDF(dataset *Dataset, useNativeTypes bool,
 				mergeValue(nodeObjectMap, "usages", tmpMap)
 				nodeMap[object] = nodeObjectMap
 				//TODO spec is wrong
-				mergeValue(nodeUsagesMap, object, name+"@@@"+node["@id"].(string))
+				mergeValue(nodeUsagesMap, object, name+" "+node["@id"].(string))
 			}
 		}
 	}

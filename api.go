@@ -4,6 +4,15 @@ import (
 	"strings"
 )
 
+/*
+	Implements the Expansion algorithm.
+	args:
+		input - a valid JSON-LD document (represented as a map, an array, or a literal in Go)
+		options - the options to be used during processing
+	returns:
+		a tuple consisting of the result and an error code. If the execution was successful,
+		the error code is nil
+*/
 func Expand(input interface{}, options *Options) ([]interface{}, error) {
 	// 1)
 	//TODO implement API with promises
@@ -63,6 +72,15 @@ func Expand(input interface{}, options *Options) ([]interface{}, error) {
 	return expanded.([]interface{}), nil
 }
 
+/*
+	Implements the Compaction algorithm.
+	args:
+		input - a valid JSON-LD document (represented as a map, an array, or a literal in Go)
+		options - the options to be used during processing
+	returns:
+		a tuple consisting of the result and an error code. If the execution was successful,
+		the error code is nil
+*/
 func Compact(input interface{}, context interface{},
 	options *Options) (map[string]interface{}, error) {
 	// 1)
@@ -120,6 +138,15 @@ func Compact(input interface{}, context interface{},
 	return compacted.(map[string]interface{}), nil
 }
 
+/*
+	Implements the Flattening algorithm.
+	args:
+		input - a valid JSON-LD document (represented as a map, an array, or a literal in Go)
+		options - the options to be used during processing
+	returns:
+		a tuple consisting of the result and an error code. If the execution was successful,
+		the error code is nil
+*/
 func Flatten(input interface{}, context interface{},
 	options *Options) (interface{}, error) {
 	// 2 - 6
@@ -141,6 +168,15 @@ func Flatten(input interface{}, context interface{},
 	return flattened, nil
 }
 
+/*
+	Converts a JSON-LD document to a RDF dataset
+	args:
+		input - a valid JSON-LD document (represented as a map, an array, or a literal in Go)
+		options - the options to be used during processing
+	returns:
+		a tuple consisting of the resulting RDF dataset and an error code.
+		If the execution was successful, the error code is nil
+*/
 func ToRDF(input interface{}, options *Options) (*Dataset, error) {
 	activeContext := &Context{}
 	activeContext.init(options)
@@ -150,6 +186,15 @@ func ToRDF(input interface{}, options *Options) (*Dataset, error) {
 	}
 	return rdfDataset, nil
 }
+
+/*
+	Converts a RDF dataset into a JSON-LD document.
+	args:
+		input - an RDF dataset
+		options - the options to be used during processing
+	returns:
+		the resulting JSON-LD dataset. The algorithm always returns an array.
+*/
 
 func FromRDF(input *Dataset, options *Options) []interface{} {
 	jsonObject := fromRDF(input, options.UseNativeTypes, options.UseRdfType)
